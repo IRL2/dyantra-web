@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import Stats from "stats";
 import { VRButton } from './VRButton.js';
+import { pickFiles, textFromFile } from "./utility.js";
 
 function make_particle_state(count) {
     return {
@@ -67,15 +68,96 @@ function make_particle_geometry(count) {
 
 export default async function start() {
     const params = new URLSearchParams(document.location.search);
-    const showAttractors = params.get("attractors") == "true";
+    const showAttractors = params.has("attractors");
     const velocityColored = params.get("velocity") != "false";
     const pointCount = parseFloat(params.get("count") ?? "0") || Math.pow(2, 13);
-    console.log(pointCount);
+    const svgurl = params.get("svg");
+
+    async function pickSVG() {
+        const [file] = await pickFiles("*.svg");
+        const text = await textFromFile(file);
+        const parser = new DOMParser();
+        const svg = parser.parseFromString(text, "image/svg+xml");
+        return svg;
+    }
+
+    async function loadSVG(url) {
+        const text = await fetch(url).then((r) => r.text());
+        const parser = new DOMParser();
+        const svg = parser.parseFromString(text, "image/svg+xml");
+        return svg;
+    }
+
+    function generate_points_svg(svg, state) {
+        /** @type {SVGPathElement[]} */
+        const paths = svg.querySelectorAll("path");
+
+        const totalLength = Array.from(paths).map((path) => path.getTotalLength()).reduce((a, b) => a + b);
+        let i = 0;
+
+        const position = new THREE.Vector3();
+
+        for (const path of paths) {
+            const share = path.getTotalLength() / totalLength;
+            const count = Math.floor(state.count * share);
+            const delta = path.getTotalLength() / count;
+
+            const matrix = path.transform.baseVal.consolidate()?.matrix;
+            
+            for (let j = 0; j < count; ++j) {
+                let point = path.getPointAtLength(j * delta);
+                if (matrix) {
+                    point = point.matrixTransform(matrix);
+                }
+
+                position.set(point.x, point.y, 0);
+                position.multiplyScalar(0.001);
+                position.toArray(state.p, i * 3);
+                i += 1;
+            }
+        }
+    }
+
+    function center_points(state) {
+        const center = new THREE.Vector3();
+        const position = new THREE.Vector3();
+
+        for (let i = 0; i < state.count; ++i) {
+            position.fromArray(state.p, i * 3);
+            center.add(position);
+        }
+
+        center.multiplyScalar(1 / state.count);
+
+        for (let i = 0; i < state.count; ++i) {
+            position.fromArray(state.p, i * 3);
+            position.sub(center);
+            position.toArray(state.p, i * 3);
+        }
+    }
+
+    document.addEventListener("keydown", async (event) => {
+        if (event.key == "s") {
+            const svg = await pickSVG();
+
+            prev = make_particle_state(pointCount);
+            next = make_particle_state(pointCount);
+            generate_points_svg(svg, next);
+            center_points(next);
+        }
+    });
 
     let prev = make_particle_state(pointCount);
     let next = make_particle_state(pointCount);
 
-    generate_points(next);
+    if (svgurl) {
+        const svg = await loadSVG(svgurl);
+        generate_points_svg(svg, next);
+        center_points(next);
+    } else {
+        generate_points(next);
+    }
+
     prev.c.set(next.c);
 
     // threejs + xr setup
@@ -126,7 +208,8 @@ export default async function start() {
 
     const attractors = [
         // make_attractor(new THREE.Vector3(-1, -1, 0).multiplyScalar(1), 1, .025),
-        make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1), 1, .025),
+        make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1),  1,  .05),
+        make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1), .25, -.05),
         // make_attractor(new THREE.Vector3( 1,  1, 0).multiplyScalar(1), 1, .025),
     ]
 
@@ -221,7 +304,7 @@ export default async function start() {
         const parent = renderer.domElement.parentElement;
         const { width, height } = parent.getBoundingClientRect();
 
-        const size = 2;
+        const size = 3.5;
         const aspect = width / height;
 
         renderer.setSize(width, height, true);

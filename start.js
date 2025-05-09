@@ -137,28 +137,41 @@ export default async function start() {
     function generate_points_svg(svg, state) {
         /** @type {SVGGeometryElement[]} */
         const geometries = svg.querySelectorAll("path");
-        const totalLength = Array.from(geometries).map((geometry) => geometry.getTotalLength()).reduce((a, b) => a + b);
-        let i = 0;
+        let offset = 0;
+        let error = 0;
+
+        const lengths = Array.from(geometries).map((geometry) => geometry.getTotalLength());
+        const lengthsTotal = lengths.reduce((a, b) => a + b);
 
         const position = new THREE.Vector3();
 
-        for (const geometry of geometries) {
-            const share = geometry.getTotalLength() / totalLength;
-            const count = Math.floor(state.count * share);
-            const delta = geometry.getTotalLength() / count;
+        for (let i = 0; i < geometries.length; ++i) {
+            const geometry = geometries[i];
+
+            const share = lengths[i] / lengthsTotal;
+            let count = Math.floor(state.count * share);
+            const delta = lengths[i] / count;
+
+            error += state.count * share - count;
+
+            if (error > 0) {
+                count += Math.ceil(error);
+                error -= Math.ceil(error);
+            }
 
             const matrix = geometry.transform.baseVal.consolidate()?.matrix;
             
-            for (let j = 0; j < count; ++j) {
+            for (let j = 0; j < count && j < state.count; ++j) {
                 let point = geometry.getPointAtLength(j * delta);
                 if (matrix) {
                     point = point.matrixTransform(matrix);
                 }
 
                 position.set(point.x, point.y, 0);
-                position.toArray(state.p, i * 3);
-                i += 1;
+                position.toArray(state.p, offset + j * 3);
             }
+
+            offset += count * 3;
         }
     }
 

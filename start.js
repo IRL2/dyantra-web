@@ -66,23 +66,58 @@ function make_particle_geometry(count) {
     return geometry;
 }
 
-export default async function start() {
+const PARAM_DEFS = new Map();
+const PARAM_VALS = new Map();
+
+function DEF_PARAM(id, parser, ...fallbacks) {
+    PARAM_DEFS.set(id, { id, parser, fallbacks });
+}
+
+const parseBool = (text) => text == "true";
+const parseString = (text) => text;
+
+function parseAttractor(text) {
+    const [x, y, z, radius, amplitude] = text.split(",").map((param) => parseFloat(param));
+    return make_attractor(new THREE.Vector3(x, y, z), radius, amplitude);
+}
+
+DEF_PARAM("count", parseFloat, Math.pow(2, 13));
+DEF_PARAM("attractors", parseBool, false);
+DEF_PARAM("velocity", parseBool, true);
+DEF_PARAM("attractors", parseBool, false);
+DEF_PARAM("zoom", parseFloat, 1);
+DEF_PARAM("svg", parseString, undefined);
+DEF_PARAM("attractor", parseAttractor,
+    make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1),  1,  .05),
+    make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1), .25, -.05),
+);
+
+function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
-    const showAttractors = params.has("attractors");
-    const velocityColored = params.get("velocity") != "false";
-    const pointCount = parseFloat(params.get("count") ?? "0") || Math.pow(2, 13);
-    const svgurl = params.get("svg");
-    const zoom = parseFloat(params.get("zoom") ?? "1");
 
-    const attractors = params.getAll("attractor").map((data) => {
-        const [x, y, z, radius, amplitude] = data.split(",").map((param) => parseFloat(param));
-        return make_attractor(new THREE.Vector3(x, y, z), radius, amplitude);
-    });
-
-    if (attractors.length == 0) {
-        attractors.push(make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1),  1,  .05))
-        attractors.push(make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1), .25, -.05))
+    for (const def of PARAM_DEFS.values()) {
+        const vals = params.getAll(def.id).map((text) => def.parser(text));
+        PARAM_VALS.set(def.id, vals.length > 0 ? vals : def.fallbacks);
     }
+}
+
+function GET_PARAM(id) {
+    return PARAM_VALS.get(id)[0];
+}
+
+
+function GET_PARAM_ALL(id) {
+    return PARAM_VALS.get(id);
+}
+
+export default async function start() {
+    READ_PARAMS();
+    
+    for (const [id, values] of PARAM_VALS) {
+        console.log(id, values);
+    }
+
+    const pointCount = GET_PARAM("count");
 
     async function pickSVG() {
         const [file] = await pickFiles("*.svg");
@@ -165,6 +200,8 @@ export default async function start() {
     let prev = make_particle_state(pointCount);
     let next = make_particle_state(pointCount);
 
+    const svgurl = GET_PARAM("svg");
+
     if (svgurl) {
         const svg = await loadSVG(svgurl);
         generate_points_svg(svg, next);
@@ -221,8 +258,10 @@ export default async function start() {
     const temp_v = new THREE.Vector3();
     const temp_c = new THREE.Color();
 
+    const attractors = GET_PARAM_ALL("attractor");
+
     // render attractors
-    if (showAttractors) {
+    if (GET_PARAM("attractors")) {
         const attractorMat = new THREE.MeshBasicMaterial( { color: 0xffff00, transparent: true, opacity: .1, depthWrite: false } ); 
         for (const attractor of attractors) {
             const geo = new THREE.SphereGeometry(attractor.radius);
@@ -284,6 +323,8 @@ export default async function start() {
             temp_f.toArray(next.f, i*3);
         }
 
+        const velocityColored = GET_PARAM("velocity");
+
         // next.v = prev.v + (prev.f + next.f) * s;
         for (let i = 0; i < pointCount; ++i) {
             temp_f.fromArray(prev.f, i*3);
@@ -303,7 +344,7 @@ export default async function start() {
             }
         }
     }
-
+    
     // fit browser window
     function resize() {
         if (renderer.xr.isPresenting)
@@ -312,16 +353,24 @@ export default async function start() {
         const parent = renderer.domElement.parentElement;
         const { width, height } = parent.getBoundingClientRect();
 
-        const size = 1 / zoom;
+        const size = 1 / GET_PARAM("zoom");
         const aspect = width / height;
 
         renderer.setSize(width, height, true);
         renderer.setPixelRatio(window.devicePixelRatio);
 
-        camera.left   = size * aspect / -2;
-        camera.right  = size * aspect /  2;
-        camera.top    = size / -2;
-        camera.bottom = size /  2;
+        if (width > height) {
+            camera.left   = size * aspect / -2;
+            camera.right  = size * aspect /  2;
+            camera.top    = size / -2;
+            camera.bottom = size /  2;
+        } else {
+            camera.left   = size / -2;
+            camera.right  = size /  2;
+            camera.top    = size / aspect / -2;
+            camera.bottom = size / aspect /  2;
+        }
+
         camera.updateProjectionMatrix();
     }
 

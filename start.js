@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import Stats from "stats";
 import { VRButton } from './VRButton.js';
-import { pickFiles, textFromFile } from "./utility.js";
+import { pickFiles, textFromFile, html } from "./utility.js";
 
 function make_particle_state(count) {
     return {
@@ -118,6 +118,214 @@ export default async function start() {
     }
 
     const pointCount = GET_PARAM("count");
+
+    function setupUI() {
+        const uiToggle = document.getElementById('ui-toggle');
+        const uiPanel = document.getElementById('ui-panel');
+        const particleCountInput = document.getElementById('particle-count');
+        const zoomLevelInput = document.getElementById('zoom-level');
+        const zoomValueDisplay = document.getElementById('zoom-value');
+        const svgUrlInput = document.getElementById('svg-url');
+        const loadSvgButton = document.getElementById('load-svg-file');
+        const attractorsContainer = document.getElementById('attractors-container');
+        const addAttractorButton = document.getElementById('add-attractor');
+        const applySettingsButton = document.getElementById('apply-settings');
+
+        // Initialize UI values from URL params
+        particleCountInput.value = pointCount;
+        zoomLevelInput.value = GET_PARAM("zoom");
+        zoomValueDisplay.textContent = GET_PARAM("zoom").toFixed(2);
+        svgUrlInput.value = GET_PARAM("svg") ?? "";
+
+        // Populate attractors
+        attractors.forEach((attractor, index) => {
+            addAttractorToUI(attractor, index);
+        });
+
+        // Toggle UI visibility
+        uiToggle.addEventListener('click', () => {
+            uiPanel.classList.toggle('visible');
+            if (uiPanel.classList.contains('visible')) {
+                uiToggle.textContent = '✕ Close';
+            } else {
+                uiToggle.textContent = '⚙️ Settings';
+            }
+        });
+
+        // Update zoom value display
+        zoomLevelInput.addEventListener('input', () => {
+            zoomValueDisplay.textContent = parseFloat(zoomLevelInput.value).toFixed(2);
+        });
+
+        // Load local SVG file
+        loadSvgButton.addEventListener('click', async () => {
+            try {
+                const svg = await pickSVG();
+                svgUrlInput.value = ''; // Clear URL when loading local file
+                
+                // Reset simulation with new SVG
+                prev = make_particle_state(parseInt(particleCountInput.value));
+                next = make_particle_state(parseInt(particleCountInput.value));
+                generate_points_svg(svg, next);
+                center_points(next);
+                
+                // Update graphics
+                const positions = pointsGeometry.getAttribute("position");
+                const colors = pointsGeometry.getAttribute("color");
+                positions.array = next.p;
+                positions.needsUpdate = true;
+                colors.array = next.c;
+                colors.needsUpdate = true;
+            } catch (error) {
+                console.error("Error loading SVG:", error);
+            }
+        });
+
+        // Add new attractor
+        addAttractorButton.addEventListener('click', () => {
+            const newAttractor = make_attractor(new THREE.Vector3(0, 0, 0), 1, 0.05);
+            attractors.push(newAttractor);
+            addAttractorToUI(newAttractor, attractors.length - 1);
+        });
+
+        // Apply settings button
+        applySettingsButton.addEventListener('click', applySettings);
+
+        function addAttractorToUI(attractor, index) {
+            const attractorItem = document.createElement('div');
+            attractorItem.className = 'attractor-item';
+            attractorItem.dataset.index = index;
+
+            attractorItem.innerHTML = `
+                <div class="attractor-controls">
+                    <div>
+                        <label for="attractor-x">X:</label>
+                        <input type="number" id="attractor-x" step="0.1" value="${attractor.position.x}">
+                    </div>
+                    <div>
+                        <label for="attractor-y">Y:</label>
+                        <input type="number" id="attractor-y" step="0.1" value="${attractor.position.y}">
+                    </div>
+                    <div>
+                        <label for="attractor-z">Z:</label>
+                        <input type="number" id="attractor-z" step="0.1" value="${attractor.position.z}">
+                    </div>
+                    <div>
+                        <label for="attractor-radius">Radius:</label>
+                        <input type="number" id="attractor-radius" step="0.1" min="0.1" value="${attractor.radius}">
+                    </div>
+                    <div>
+                        <label for="attractor-amplitude">Amplitude:</label>
+                        <input type="number" id="attractor-amplitude" step="0.01" value="${attractor.amplitude}">
+                    </div>
+                </div>
+                <button class="remove-attractor">Remove</button>
+            `;
+
+            attractorsContainer.appendChild(attractorItem);
+
+            // Add event listener for the remove button
+            attractorItem.querySelector('.remove-attractor').addEventListener('click', () => {
+                attractors.splice(index, 1);
+                attractorItem.remove();
+                // Update indices for remaining attractors
+                updateAttractorIndices();
+            });
+        }
+
+        function updateAttractorIndices() {
+            const attractorItems = attractorsContainer.querySelectorAll('.attractor-item');
+            attractorItems.forEach((item, index) => {
+                item.dataset.index = index;
+            });
+        }
+
+        function applySettings() {
+            // Get values from UI
+            const newPointCount = parseInt(particleCountInput.value);
+            const newZoom = parseFloat(zoomLevelInput.value);
+            const newSvgUrl = svgUrlInput.value;
+
+            // Update attractors
+            const attractorItems = attractorsContainer.querySelectorAll('.attractor-item');
+            attractors.length = 0; // Clear existing attractors
+            
+            attractorItems.forEach((item, index) => {
+                const x = parseFloat(item.querySelector(`#attractor-x`).value);
+                const y = parseFloat(item.querySelector(`#attractor-y`).value);
+                const z = parseFloat(item.querySelector(`#attractor-z`).value);
+                const radius = parseFloat(item.querySelector(`#attractor-radius`).value);
+                const amplitude = parseFloat(item.querySelector(`#attractor-amplitude`).value);
+                
+                attractors.push(make_attractor(new THREE.Vector3(x, y, z), radius, amplitude));
+            });
+
+            // Apply zoom
+            camera.left = (1 / newZoom) * (window.innerWidth / window.innerHeight) / -2;
+            camera.right = (1 / newZoom) * (window.innerWidth / window.innerHeight) / 2;
+            camera.top = (1 / newZoom) / -2;
+            camera.bottom = (1 / newZoom) / 2;
+            camera.updateProjectionMatrix();
+
+            // If point count changed, recreate particle system
+            if (newPointCount !== pointCount) {
+                prev = make_particle_state(newPointCount);
+                next = make_particle_state(newPointCount);
+                
+                scene.remove(pointsObject);
+                pointsGeometry.dispose();
+                
+                pointsGeometry = make_particle_geometry(newPointCount);
+                pointsObject = new THREE.Points(pointsGeometry, pointsMat);
+                scene.add(pointsObject);
+                
+                // Generate new points
+                if (newSvgUrl) {
+                    loadSVG(newSvgUrl).then(svg => {
+                        generate_points_svg(svg, next);
+                        center_points(next);
+                    });
+                } else {
+                    generate_points(next);
+                }
+            } 
+            // If only SVG URL changed
+            else if (newSvgUrl && newSvgUrl !== svgurl) {
+                loadSVG(newSvgUrl).then(svg => {
+                    generate_points_svg(svg, next);
+                    center_points(next);
+                });
+            }
+
+            // Update the URL with new parameters for bookmarking/sharing
+            updateURLParams(newPointCount, newZoom, newSvgUrl);
+        }
+
+        function updateURLParams(count, zoom, svgUrl) {
+            const url = new URL(window.location.href);
+            const params = url.searchParams;
+            
+            params.set('count', count);
+            params.set('zoom', zoom);
+            
+            // Update SVG URL
+            if (svgUrl) {
+                params.set('svg', svgUrl);
+            } else {
+                params.delete('svg');
+            }
+            
+            // Update attractors
+            params.delete('attractor');
+            attractors.forEach(attractor => {
+                const attractorString = `${attractor.position.x},${attractor.position.y},${attractor.position.z},${attractor.radius},${attractor.amplitude}`;
+                params.append('attractor', attractorString);
+            });
+            
+            // Update URL without refreshing page
+            window.history.replaceState({}, '', url.toString());
+        }
+    }
 
     async function pickSVG() {
         const [file] = await pickFiles("*.svg");
@@ -259,8 +467,8 @@ export default async function start() {
         depthWrite: false,
     });
 
-    const pointsGeometry = make_particle_geometry(pointCount);
-    const pointsObject = new THREE.Points(pointsGeometry, pointsMat);
+    let pointsGeometry = make_particle_geometry(pointCount);
+    let pointsObject = new THREE.Points(pointsGeometry, pointsMat);
 
     scene.add(pointsObject);
 
@@ -409,4 +617,8 @@ export default async function start() {
     function render() {
         renderer.render(scene, camera);
     }
+    
+    // Setup UI controls
+    setupUI();
 }
+

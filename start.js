@@ -443,7 +443,6 @@ export default async function start() {
     const clock = new THREE.Clock();
 
     const stats = Stats();
-    document.body.appendChild(stats.dom);
 
     const scene = new THREE.Scene();
     
@@ -563,7 +562,12 @@ export default async function start() {
             }
         }
     }
-    
+
+    const menu = document.getElementById('ui-panel');
+    function IS_MENU_OPEN() {
+        return menu.classList.contains("visible");
+    }
+
     // fit browser window
     function resize() {
         if (renderer.xr.isPresenting)
@@ -604,12 +608,14 @@ export default async function start() {
         update(dt);
         render();
 
+        attractorGroup.visible = IS_MENU_OPEN();
+        if (IS_MENU_OPEN()) document.body.append(stats.dom);
+        else stats.dom.remove();
         stats.update();
     }
     renderer.setAnimationLoop(animate);
 
     function update(dt) {
-        attractorGroup.visible = document.getElementById('ui-panel').classList.contains("visible");
         updateParticles(dt);
     }
 

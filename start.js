@@ -84,7 +84,6 @@ function parseAttractor(text) {
 DEF_PARAM("count", parseFloat, Math.pow(2, 13));
 DEF_PARAM("attractors", parseBool, false);
 DEF_PARAM("velocity", parseBool, true);
-DEF_PARAM("attractors", parseBool, false);
 DEF_PARAM("zoom", parseFloat, 1);
 DEF_PARAM("svg", parseString, undefined);
 DEF_PARAM("attractor", parseAttractor,
@@ -191,36 +190,29 @@ export default async function start() {
         // Apply settings button
         applySettingsButton.addEventListener('click', applySettings);
 
+        function renderNumberUI(name, label, value, step) {
+            return html("div", {},
+                html("label", {}, 
+                    `${label}:`, 
+                    html("input", { type: "number", name, step, value })
+                ),
+            );
+        }
+
         function addAttractorToUI(attractor, index) {
             const attractorItem = document.createElement('div');
             attractorItem.className = 'attractor-item';
             attractorItem.dataset.index = index;
-
-            attractorItem.innerHTML = `
-                <div class="attractor-controls">
-                    <div>
-                        <label for="attractor-x">X:</label>
-                        <input type="number" id="attractor-x" step="0.1" value="${attractor.position.x}">
-                    </div>
-                    <div>
-                        <label for="attractor-y">Y:</label>
-                        <input type="number" id="attractor-y" step="0.1" value="${attractor.position.y}">
-                    </div>
-                    <div>
-                        <label for="attractor-z">Z:</label>
-                        <input type="number" id="attractor-z" step="0.1" value="${attractor.position.z}">
-                    </div>
-                    <div>
-                        <label for="attractor-radius">Radius:</label>
-                        <input type="number" id="attractor-radius" step="0.1" min="0.1" value="${attractor.radius}">
-                    </div>
-                    <div>
-                        <label for="attractor-amplitude">Amplitude:</label>
-                        <input type="number" id="attractor-amplitude" step="0.01" value="${attractor.amplitude}">
-                    </div>
-                </div>
-                <button class="remove-attractor">Remove</button>
-            `;
+            attractorItem.append(
+                html("div", { class: "attractor-controls" },
+                    renderNumberUI("x", "X", attractor.position.x, 0.1),
+                    renderNumberUI("y", "Y", attractor.position.y, 0.1),
+                    renderNumberUI("z", "Y", attractor.position.z, 0.1),
+                    renderNumberUI("radius", "Radius", attractor.radius, 0.1),
+                    renderNumberUI("amplitude", "X", attractor.amplitude, 0.01),
+                )
+            );
+            attractorItem.append(html("button", { class: "remove-attractor" }, "Remove"));
 
             attractorsContainer.appendChild(attractorItem);
 
@@ -250,12 +242,12 @@ export default async function start() {
             const attractorItems = attractorsContainer.querySelectorAll('.attractor-item');
             attractors.length = 0; // Clear existing attractors
             
-            attractorItems.forEach((item, index) => {
-                const x = parseFloat(item.querySelector(`#attractor-x`).value);
-                const y = parseFloat(item.querySelector(`#attractor-y`).value);
-                const z = parseFloat(item.querySelector(`#attractor-z`).value);
-                const radius = parseFloat(item.querySelector(`#attractor-radius`).value);
-                const amplitude = parseFloat(item.querySelector(`#attractor-amplitude`).value);
+            attractorItems.forEach((item) => {
+                const x = parseFloat(item.querySelector(`input[name="x"]`).value);
+                const y = parseFloat(item.querySelector(`input[name="y"]`).value);
+                const z = parseFloat(item.querySelector(`input[name="z"]`).value);
+                const radius = parseFloat(item.querySelector(`input[name="radius"]`).value);
+                const amplitude = parseFloat(item.querySelector(`input[name="amplitude"]`).value);
                 
                 attractors.push(make_attractor(new THREE.Vector3(x, y, z), radius, amplitude));
             });
@@ -296,6 +288,8 @@ export default async function start() {
                     center_points(next);
                 });
             }
+
+            refreshAttractorObjects();
 
             // Update the URL with new parameters for bookmarking/sharing
             updateURLParams(newPointCount, newZoom, newSvgUrl);
@@ -482,15 +476,19 @@ export default async function start() {
     const attractors = GET_PARAM_ALL("attractor");
 
     // render attractors
-    if (GET_PARAM("attractors")) {
-        const attractorMat = new THREE.MeshBasicMaterial( { color: 0xffff00, transparent: true, opacity: .1, depthWrite: false } ); 
+    const attractorGroup = new THREE.Object3D();
+    const attractorMat = new THREE.MeshBasicMaterial( { color: 0xffff00, transparent: true, opacity: .1, depthWrite: false } ); 
+    function refreshAttractorObjects() {
+        attractorGroup.clear();
         for (const attractor of attractors) {
             const geo = new THREE.SphereGeometry(attractor.radius);
             const sphere = new THREE.Mesh(geo, attractorMat);
             sphere.position.copy(attractor.position);
-            scene.add(sphere);
+            attractorGroup.add(sphere);
         }
     }
+    refreshAttractorObjects();
+    scene.add(attractorGroup);
 
     function updateParticles(dt) {
         // flip prev/next buffers
@@ -611,6 +609,7 @@ export default async function start() {
     renderer.setAnimationLoop(animate);
 
     function update(dt) {
+        attractorGroup.visible = document.getElementById('ui-panel').classList.contains("visible");
         updateParticles(dt);
     }
 

@@ -224,6 +224,8 @@ export default async function start() {
             particleCountContainer.querySelector("span").innerText = ` (${count})`;
         }
 
+        particleCountInput.value = GET_PARAM("count");
+        particleCountContainer.querySelector("span").innerText = ` (${GET_PARAM("count")})`;
         particleCountInput.addEventListener("input", () => refreshParticleCountUI());
 
         // Initialize UI values from URL params
@@ -248,6 +250,8 @@ export default async function start() {
         });
 
         svgUrlInput.addEventListener("change", () => {
+            SET_PARAM("svg", svgUrlInput.value);
+            RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
             loadSVG(svgUrlInput.value).then(svg => {
                 generate_points_svg(svg, next);
                 center_points(next);

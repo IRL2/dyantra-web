@@ -224,6 +224,8 @@ export default async function start() {
             particleCountContainer.querySelector("span").innerText = ` (${count})`;
         }
 
+        particleCountInput.value = GET_PARAM("count");
+        particleCountContainer.querySelector("span").innerText = ` (${GET_PARAM("count")})`;
         particleCountInput.addEventListener("input", () => refreshParticleCountUI());
 
         // Initialize UI values from URL params

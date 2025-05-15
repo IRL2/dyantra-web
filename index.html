@@ -119,9 +119,10 @@
   
   <div id="ui-panel">
     <h2>Simulation Settings</h2>
-    <div class="control-row">
+    <div class="control-row" id="particle-count-container">
       <label for="particle-count">Particle Count</label>
-      <input type="number" id="particle-count" min="1000" max="200000" step="1000">
+      <span>(0)</span>
+      <input type="range" id="particle-count" name="particle-count" min="2000" max="200000" step="2000">
     </div>
     <div class="control-row">
       <label for="zoom-level">Zoom Level</label>
@@ -139,9 +140,6 @@
       <label>Attractors</label>
       <div id="attractors-container"></div>
       <button id="add-attractor">Add Attractor</button>
-    </div>
-    <div class="control-row">
-      <button id="apply-settings">Apply Settings</button>
     </div>
   </div>
 

@@ -69,44 +69,76 @@ function make_particle_geometry(count) {
 const PARAM_DEFS = new Map();
 const PARAM_VALS = new Map();
 
-function DEF_PARAM(id, parser, ...fallbacks) {
-    PARAM_DEFS.set(id, { id, parser, fallbacks });
+function DEF_PARAM(id, deserializer, serializer, ...fallbacks) {
+    PARAM_DEFS.set(id, { id, deserializer, serializer, fallbacks });
 }
 
 const parseBool = (text) => text == "true";
 const parseString = (text) => text;
+const toString = (value) => value?.toString();
 
 function parseAttractor(text) {
     const [x, y, z, radius, amplitude] = text.split(",").map((param) => parseFloat(param));
     return make_attractor(new THREE.Vector3(x, y, z), radius, amplitude);
 }
 
-DEF_PARAM("count", parseFloat, Math.pow(2, 13));
-DEF_PARAM("attractors", parseBool, false);
-DEF_PARAM("velocity", parseBool, true);
-DEF_PARAM("zoom", parseFloat, 1);
-DEF_PARAM("svg", parseString, undefined);
-DEF_PARAM("attractor", parseAttractor,
-    make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1),  1,  .05),
-    make_attractor(new THREE.Vector3( 0,  0, 0).multiplyScalar(1), .25, -.05),
+/**
+ * @param {ReturnType<typeof make_attractor>} attractor
+ */
+function serializeAttractor(attractor) {
+    const { position, radius, amplitude } = attractor;
+    const { x, y, z } = position;
+    return [x, y, z, radius, amplitude].join(",");
+}
+
+DEF_PARAM("count", parseFloat, toString, Math.pow(2, 13));
+DEF_PARAM("attractors", parseBool, toString, false);
+DEF_PARAM("velocity", parseBool, toString, true);
+DEF_PARAM("zoom", parseFloat, toString, 1);
+DEF_PARAM("svg", parseString, toString, undefined);
+DEF_PARAM("attractor", parseAttractor, serializeAttractor,
+    make_attractor(new THREE.Vector3(0, 0, 0).multiplyScalar(1),  1,  .05),
+    make_attractor(new THREE.Vector3(0, 0, 0).multiplyScalar(1), .25, -.05),
 );
 
 function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
 
     for (const def of PARAM_DEFS.values()) {
-        const vals = params.getAll(def.id).map((text) => def.parser(text));
+        const vals = params.getAll(def.id).map((text) => def.deserializer(text));
         PARAM_VALS.set(def.id, vals.length > 0 ? vals : def.fallbacks);
     }
+}
+
+function WRITE_PARAMS() {
+    const url = new URL(location.href.replace(location.search, ""));
+
+    for (const def of PARAM_DEFS.values()) {
+        for (const value of PARAM_VALS.get(def.id)) {
+            const text = def.serializer(value);
+            if (text) url.searchParams.append(def.id, text);
+        }
+    }
+
+    window.history.replaceState({}, "", url.toString());
 }
 
 function GET_PARAM(id) {
     return PARAM_VALS.get(id)[0];
 }
 
+function SET_PARAM(id, value) {
+    PARAM_VALS.set(id, [value]);
+    WRITE_PARAMS();
+}
 
 function GET_PARAM_ALL(id) {
     return PARAM_VALS.get(id);
+}
+
+function SET_PARAM_ALL(id, ...values) {
+    PARAM_VALS.set(values);
+    WRITE_PARAMS();
 }
 
 export default async function start() {
@@ -116,7 +148,45 @@ export default async function start() {
         console.log(id, values);
     }
 
-    const pointCount = GET_PARAM("count");
+    const pointsMaterial = new THREE.PointsMaterial({
+        size: 4, 
+        map: new THREE.TextureLoader().load("particle.webp"), 
+        vertexColors: true,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    let pointsGeometry;
+    let pointsObject = new THREE.Points(make_particle_geometry(1), pointsMaterial);
+
+    /** @type {ReturnType<typeof make_particle_state>} */
+    let prev, next;
+
+    function RESIZE_PARTICLE_COUNT(count) {
+        pointsGeometry?.dispose();
+        pointsGeometry = make_particle_geometry(count);
+        pointsObject.geometry = pointsGeometry;
+
+        prev = make_particle_state(count);
+        next = make_particle_state(count);
+    }
+
+    async function RELOAD() {
+        RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+
+        const svgurl = GET_PARAM("svg");
+
+        if (svgurl) {
+            const svg = await loadSVG(svgurl);
+            generate_points_svg(svg, next);
+        } else {
+            generate_points(next);
+        }
+
+        center_points(next);
+        prev.c.set(next.c);
+    }
 
     function setupUI() {
         const uiToggle = document.getElementById('ui-toggle');
@@ -128,10 +198,36 @@ export default async function start() {
         const loadSvgButton = document.getElementById('load-svg-file');
         const attractorsContainer = document.getElementById('attractors-container');
         const addAttractorButton = document.getElementById('add-attractor');
-        const applySettingsButton = document.getElementById('apply-settings');
+
+        const particleCountContainer = document.querySelector("#particle-count-container");
+
+        function refreshParticleCountUI() {
+            const count = document.querySelector(`input[name="particle-count"]`)?.value ?? prev.count;
+            SET_PARAM("count", count);
+
+            // If point count changed, recreate particle system
+            if (count !== prev.count) {
+                RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+                scene.add(pointsObject);
+                
+                // Generate new points
+                if (GET_PARAM("svg")) {
+                    loadSVG(GET_PARAM("svg")).then(svg => {
+                        generate_points_svg(svg, next);
+                        center_points(next);
+                    });
+                } else {
+                    generate_points(next);
+                }
+            } 
+
+            particleCountContainer.querySelector("span").innerText = ` (${count})`;
+        }
+
+        particleCountInput.addEventListener("input", () => refreshParticleCountUI());
 
         // Initialize UI values from URL params
-        particleCountInput.value = pointCount;
+        particleCountInput.value = GET_PARAM("count");
         zoomLevelInput.value = GET_PARAM("zoom");
         zoomValueDisplay.textContent = GET_PARAM("zoom").toFixed(2);
         svgUrlInput.value = GET_PARAM("svg") ?? "";
@@ -151,6 +247,13 @@ export default async function start() {
             }
         });
 
+        svgUrlInput.addEventListener("change", () => {
+            loadSVG(svgUrlInput.value).then(svg => {
+                generate_points_svg(svg, next);
+                center_points(next);
+            });
+        });
+
         // Update zoom value display
         zoomLevelInput.addEventListener('input', () => {
             zoomValueDisplay.textContent = parseFloat(zoomLevelInput.value).toFixed(2);
@@ -163,8 +266,7 @@ export default async function start() {
                 svgUrlInput.value = ''; // Clear URL when loading local file
                 
                 // Reset simulation with new SVG
-                prev = make_particle_state(parseInt(particleCountInput.value));
-                next = make_particle_state(parseInt(particleCountInput.value));
+                RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
                 generate_points_svg(svg, next);
                 center_points(next);
                 
@@ -185,17 +287,25 @@ export default async function start() {
             const newAttractor = make_attractor(new THREE.Vector3(0, 0, 0), 1, 0.05);
             attractors.push(newAttractor);
             addAttractorToUI(newAttractor, attractors.length - 1);
+
+            updateAttractorsFromUI();
+            SET_PARAM_ALL("attractor", ...attractors);
+            refreshAttractorObjects();
         });
 
-        // Apply settings button
-        applySettingsButton.addEventListener('click', applySettings);
+        function renderNumberUI(name, label, value, step, min=-1, max=1) {
+            const display = html("span", {}, ` (${value})`);
 
-        function renderNumberUI(name, label, value, step) {
+            const input = html("input", { type: "range", name, step, value, min, max });
+            input.addEventListener("input", () => {
+                display.textContent = ` (${input.value})`;
+                updateAttractorsFromUI();
+                SET_PARAM_ALL("attractor", ...attractors);
+                refreshAttractorObjects();
+            });
+
             return html("div", {},
-                html("label", {}, 
-                    `${label}:`, 
-                    html("input", { type: "number", name, step, value })
-                ),
+                html("label", {}, `${label}:`, display, input),
             );
         }
 
@@ -207,9 +317,9 @@ export default async function start() {
                 html("div", { class: "attractor-controls" },
                     renderNumberUI("x", "X", attractor.position.x, 0.1),
                     renderNumberUI("y", "Y", attractor.position.y, 0.1),
-                    renderNumberUI("z", "Y", attractor.position.z, 0.1),
-                    renderNumberUI("radius", "Radius", attractor.radius, 0.1),
-                    renderNumberUI("amplitude", "X", attractor.amplitude, 0.01),
+                    renderNumberUI("z", "Z", attractor.position.z, 0.1),
+                    renderNumberUI("radius", `Radius`, attractor.radius, 0.1),
+                    renderNumberUI("amplitude", `Amplitude`, attractor.amplitude, 0.01),
                 )
             );
             attractorItem.append(html("button", { class: "remove-attractor" }, "Remove"));
@@ -222,6 +332,8 @@ export default async function start() {
                 attractorItem.remove();
                 // Update indices for remaining attractors
                 updateAttractorIndices();
+                refreshAttractorObjects();
+                SET_PARAM_ALL("attractor", ...attractors);
             });
         }
 
@@ -232,12 +344,13 @@ export default async function start() {
             });
         }
 
-        function applySettings() {
-            // Get values from UI
-            const newPointCount = parseInt(particleCountInput.value);
+        document.querySelector("input#zoom-level").addEventListener("input", () => {
             const newZoom = parseFloat(zoomLevelInput.value);
-            const newSvgUrl = svgUrlInput.value;
+            SET_PARAM("zoom", newZoom);
+            UPDATE_VIEWPORT();
+        });
 
+        function updateAttractorsFromUI() {
             // Update attractors
             const attractorItems = attractorsContainer.querySelectorAll('.attractor-item');
             attractors.length = 0; // Clear existing attractors
@@ -251,73 +364,6 @@ export default async function start() {
                 
                 attractors.push(make_attractor(new THREE.Vector3(x, y, z), radius, amplitude));
             });
-
-            // Apply zoom
-            camera.left = (1 / newZoom) * (window.innerWidth / window.innerHeight) / -2;
-            camera.right = (1 / newZoom) * (window.innerWidth / window.innerHeight) / 2;
-            camera.top = (1 / newZoom) / -2;
-            camera.bottom = (1 / newZoom) / 2;
-            camera.updateProjectionMatrix();
-
-            // If point count changed, recreate particle system
-            if (newPointCount !== pointCount) {
-                prev = make_particle_state(newPointCount);
-                next = make_particle_state(newPointCount);
-                
-                scene.remove(pointsObject);
-                pointsGeometry.dispose();
-                
-                pointsGeometry = make_particle_geometry(newPointCount);
-                pointsObject = new THREE.Points(pointsGeometry, pointsMat);
-                scene.add(pointsObject);
-                
-                // Generate new points
-                if (newSvgUrl) {
-                    loadSVG(newSvgUrl).then(svg => {
-                        generate_points_svg(svg, next);
-                        center_points(next);
-                    });
-                } else {
-                    generate_points(next);
-                }
-            } 
-            // If only SVG URL changed
-            else if (newSvgUrl && newSvgUrl !== svgurl) {
-                loadSVG(newSvgUrl).then(svg => {
-                    generate_points_svg(svg, next);
-                    center_points(next);
-                });
-            }
-
-            refreshAttractorObjects();
-
-            // Update the URL with new parameters for bookmarking/sharing
-            updateURLParams(newPointCount, newZoom, newSvgUrl);
-        }
-
-        function updateURLParams(count, zoom, svgUrl) {
-            const url = new URL(window.location.href);
-            const params = url.searchParams;
-            
-            params.set('count', count);
-            params.set('zoom', zoom);
-            
-            // Update SVG URL
-            if (svgUrl) {
-                params.set('svg', svgUrl);
-            } else {
-                params.delete('svg');
-            }
-            
-            // Update attractors
-            params.delete('attractor');
-            attractors.forEach(attractor => {
-                const attractorString = `${attractor.position.x},${attractor.position.y},${attractor.position.z},${attractor.radius},${attractor.amplitude}`;
-                params.append('attractor', attractorString);
-            });
-            
-            // Update URL without refreshing page
-            window.history.replaceState({}, '', url.toString());
         }
     }
 
@@ -401,32 +447,6 @@ export default async function start() {
         }
     }
 
-    document.addEventListener("keydown", async (event) => {
-        if (event.key == "s") {
-            const svg = await pickSVG();
-
-            prev = make_particle_state(pointCount);
-            next = make_particle_state(pointCount);
-            generate_points_svg(svg, next);
-            center_points(next);
-        }
-    });
-
-    let prev = make_particle_state(pointCount);
-    let next = make_particle_state(pointCount);
-
-    const svgurl = GET_PARAM("svg");
-
-    if (svgurl) {
-        const svg = await loadSVG(svgurl);
-        generate_points_svg(svg, next);
-        center_points(next);
-    } else {
-        generate_points(next);
-    }
-
-    prev.c.set(next.c);
-
     // threejs + xr setup
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.autoClear = false;
@@ -436,7 +456,7 @@ export default async function start() {
     renderer.xr.enabled = true;
 
     renderer.xr.addEventListener("sessionstart", () => {
-        pointsMat.size = .01;
+        pointsMaterial.size = .01;
         pointsObject.position.set(0, 1, -1);
     });
 
@@ -449,19 +469,6 @@ export default async function start() {
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 500);
     camera.position.set(0, 0, 1);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
-
-    // particle geometry
-    const pointsMat = new THREE.PointsMaterial({
-        size: 4, 
-        map: new THREE.TextureLoader().load("particle.webp"), 
-        vertexColors: true,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-    });
-
-    let pointsGeometry = make_particle_geometry(pointCount);
-    let pointsObject = new THREE.Points(pointsGeometry, pointsMat);
 
     scene.add(pointsObject);
 
@@ -507,7 +514,7 @@ export default async function start() {
         const s2 = 0.5 * dt * dt / m;
 
         // next.p = prev.p + prev.v * dt + prev.f * s;
-        for (let i = 0; i < pointCount; ++i) {
+        for (let i = 0; i < prev.count; ++i) {
             temp_p.fromArray(prev.p, i*3);
             temp_v.fromArray(prev.v, i*3);
             temp_f.fromArray(prev.f, i*3);
@@ -521,7 +528,7 @@ export default async function start() {
         // dp = prev.p - attractor.p
         // exponent = (dp . dp) * attractor.inv_exp_denominator
         // next.f = sum(dp * -attractor.coefficient * exp(exponent))
-        for (let i = 0; i < pointCount; ++i) {
+        for (let i = 0; i < prev.count; ++i) {
             temp_p.fromArray(prev.p, i*3);
             temp_f.set(0, 0, 0);
 
@@ -544,7 +551,7 @@ export default async function start() {
         const velocityColored = GET_PARAM("velocity");
 
         // next.v = prev.v + (prev.f + next.f) * s;
-        for (let i = 0; i < pointCount; ++i) {
+        for (let i = 0; i < prev.count; ++i) {
             temp_f.fromArray(prev.f, i*3);
             temp.fromArray(next.f, i*3);
             temp_f.add(temp)
@@ -569,7 +576,7 @@ export default async function start() {
     }
 
     // fit browser window
-    function resize() {
+    function UPDATE_VIEWPORT() {
         if (renderer.xr.isPresenting)
             return;
 
@@ -578,6 +585,8 @@ export default async function start() {
 
         const size = 1 / GET_PARAM("zoom");
         const aspect = width / height;
+
+        pointsMaterial.size = 4 * GET_PARAM("zoom");
 
         renderer.setSize(width, height, true);
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -597,16 +606,16 @@ export default async function start() {
         camera.updateProjectionMatrix();
     }
 
-    window.addEventListener("resize", resize);
-    renderer.xr.addEventListener("sessionend", resize);
-    resize();
+    window.addEventListener("resize", UPDATE_VIEWPORT);
+    renderer.xr.addEventListener("sessionend", UPDATE_VIEWPORT);
+    UPDATE_VIEWPORT();
 
     // control loop
     function animate() {
         const dt = Math.min(1/15, clock.getDelta());
 
-        update(dt);
-        render();
+        updateParticles(dt);
+        renderer.render(scene, camera);
 
         attractorGroup.visible = IS_MENU_OPEN();
         if (IS_MENU_OPEN()) document.body.append(stats.dom);
@@ -615,15 +624,9 @@ export default async function start() {
     }
     renderer.setAnimationLoop(animate);
 
-    function update(dt) {
-        updateParticles(dt);
-    }
-
-    function render() {
-        renderer.render(scene, camera);
-    }
-    
     // Setup UI controls
     setupUI();
+
+    RELOAD();
 }
 

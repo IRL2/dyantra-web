@@ -614,9 +614,25 @@ export default async function start() {
     renderer.xr.addEventListener("sessionend", UPDATE_VIEWPORT);
     UPDATE_VIEWPORT();
 
+    const target = new THREE.Vector3();
+    const rotation = new THREE.Matrix4();
+    const ray = new THREE.Ray();
+
     // control loop
     function animate() {
         const dt = Math.min(1/15, clock.getDelta());
+
+        if (renderer.xr.isPresenting) {
+            const camera = renderer.xr.getCamera();
+
+            rotation.identity().extractRotation(camera.matrixWorld);
+            ray.direction.set(0, 0, -1).applyMatrix4(rotation);
+            target.setFromMatrixPosition(camera.matrixWorld);
+            ray.origin.add(target).multiplyScalar(.5 * dt);
+
+            ray.at(2, pointsObject.position);
+            pointsObject.lookAt(ray.origin);
+        }
 
         updateParticles(dt);
         renderer.render(scene, camera);

@@ -100,6 +100,7 @@ DEF_PARAM("attractor", parseAttractor, serializeAttractor,
     make_attractor(new THREE.Vector3(0, 0, 0).multiplyScalar(1),  1,  .05),
     make_attractor(new THREE.Vector3(0, 0, 0).multiplyScalar(1), .25, -.05),
 );
+DEF_PARAM("depth", parseFloat, toString, 2);
 
 function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
@@ -194,6 +195,8 @@ export default async function start() {
         const particleCountInput = document.getElementById('particle-count');
         const zoomLevelInput = document.getElementById('zoom-level');
         const zoomValueDisplay = document.getElementById('zoom-value');
+        const depthInput = document.getElementById('depth');
+        const depthValueDisplay = document.getElementById('depth-value');
         const svgUrlInput = document.getElementById('svg-url');
         const loadSvgButton = document.getElementById('load-svg-file');
         const attractorsContainer = document.getElementById('attractors-container');
@@ -234,6 +237,9 @@ export default async function start() {
         zoomValueDisplay.textContent = GET_PARAM("zoom").toFixed(2);
         svgUrlInput.value = GET_PARAM("svg") ?? "";
 
+        depthInput.value = GET_PARAM("depth");
+        depthValueDisplay.textContent = GET_PARAM("depth").toFixed(2);
+
         // Populate attractors
         attractors.forEach((attractor, index) => {
             addAttractorToUI(attractor, index);
@@ -261,6 +267,12 @@ export default async function start() {
         // Update zoom value display
         zoomLevelInput.addEventListener('input', () => {
             zoomValueDisplay.textContent = parseFloat(zoomLevelInput.value).toFixed(2);
+        });
+
+        // Update depth display
+        depthInput.addEventListener('input', () => {
+            depthValueDisplay.textContent = parseFloat(depthInput.value).toFixed(2);
+            SET_PARAM("depth", parseFloat(depthInput.value));
         });
 
         // Load local SVG file
@@ -642,7 +654,11 @@ export default async function start() {
         ray.direction.set(0, 0, -1).applyMatrix4(rotation);
         ray.origin.setFromMatrixPosition(camera.matrixWorld);
 
-        ray.at(2, target);
+        const depth = GET_PARAM("depth");
+        const scale = 1 + Math.max(depth - 2, 0) * .5;
+
+        ray.at(depth, target);
+        objects.scale.set(scale, scale, scale);
 
         target.sub(objects.position);
         target.multiplyScalar(dt);

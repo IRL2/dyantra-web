@@ -459,11 +459,6 @@ export default async function start() {
     document.body.appendChild(VRButton.createButton(renderer));
     renderer.xr.enabled = true;
 
-    renderer.xr.addEventListener("sessionstart", () => {
-        pointsMaterial.size = .01;
-        pointsObject.position.set(0, 1, -1);
-    });
-
     const clock = new THREE.Clock();
 
     const stats = Stats();
@@ -474,7 +469,10 @@ export default async function start() {
     camera.position.set(0, 0, 1);
     camera.lookAt(new THREE.Vector3(0, 0, 0));
 
-    scene.add(pointsObject);
+    const objects = new THREE.Object3D();
+    objects.add(pointsObject);
+
+    scene.add(objects);
 
     // physics
     const temp = new THREE.Vector3();
@@ -498,7 +496,7 @@ export default async function start() {
         }
     }
     refreshAttractorObjects();
-    scene.add(attractorGroup);
+    objects.add(attractorGroup);
 
     function updateParticles(dt) {
         // flip prev/next buffers
@@ -611,27 +609,54 @@ export default async function start() {
     }
 
     window.addEventListener("resize", UPDATE_VIEWPORT);
-    renderer.xr.addEventListener("sessionend", UPDATE_VIEWPORT);
     UPDATE_VIEWPORT();
 
+    // xr mode
     const target = new THREE.Vector3();
     const rotation = new THREE.Matrix4();
     const ray = new THREE.Ray();
+
+    renderer.xr.addEventListener("sessionstart", enter_xr);
+    renderer.xr.addEventListener("sessionend", exit_xr);
+
+    function enter_xr() {
+        pointsMaterial.size = .01;
+        objects.position.set(0, 1, -1);
+    }
+
+    function exit_xr() {
+        UPDATE_VIEWPORT();
+
+        pointsMaterial.size = 4;
+        objects.position.set(0, 0, 0);
+        objects.rotation.set(0, 0, 0);
+
+        camera.position.set(0, 0, 1);
+        camera.lookAt(new THREE.Vector3(0, 0, 0));
+    }
+
+    function update_xr(dt) {
+        const camera = renderer.xr.getCamera();
+
+        rotation.identity().extractRotation(camera.matrixWorld);
+        ray.direction.set(0, 0, -1).applyMatrix4(rotation);
+        ray.origin.setFromMatrixPosition(camera.matrixWorld);
+
+        ray.at(2, target);
+
+        target.sub(objects.position);
+        target.multiplyScalar(dt);
+        objects.position.add(target);
+        
+        objects.lookAt(ray.origin);
+    }
 
     // control loop
     function animate() {
         const dt = Math.min(1/15, clock.getDelta());
 
         if (renderer.xr.isPresenting) {
-            const camera = renderer.xr.getCamera();
-
-            rotation.identity().extractRotation(camera.matrixWorld);
-            ray.direction.set(0, 0, -1).applyMatrix4(rotation);
-            target.setFromMatrixPosition(camera.matrixWorld);
-            ray.origin.add(target).multiplyScalar(.5 * dt);
-
-            ray.at(2, pointsObject.position);
-            pointsObject.lookAt(ray.origin);
+            update_xr(dt);
         }
 
         updateParticles(dt);

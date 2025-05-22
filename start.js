@@ -101,6 +101,7 @@ DEF_PARAM("attractor", parseAttractor, serializeAttractor,
     make_attractor(new THREE.Vector3(0, 0, 0).multiplyScalar(1), .25, -.05),
 );
 DEF_PARAM("depth", parseFloat, toString, 2);
+DEF_PARAM("loop", parseFloat, toString, Infinity);
 
 function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
@@ -667,10 +668,24 @@ export default async function start() {
         objects.lookAt(ray.origin);
     }
 
+    const step_limit = GET_PARAM("loop");
+    let steps = 0;
+    let step_sign = 1;
+
     // control loop
     function animate() {
-        const dt = 0.01; //Math.min(1/15, clock.getDelta());
+
+        const dt = 0.01 * step_sign; //Math.min(1/15, clock.getDelta());
         // const dt = 0;
+
+        steps += step_sign;
+        if (steps > step_limit) {
+            step_sign *= -1;
+        }
+
+        if (steps <= 0) {
+            step_sign = 0;
+        }
 
         if (renderer.xr.isPresenting) {
             update_xr(dt);

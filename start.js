@@ -102,6 +102,7 @@ DEF_PARAM("attractor", parseAttractor, serializeAttractor,
 );
 DEF_PARAM("depth", parseFloat, toString, 2);
 DEF_PARAM("loop", parseFloat, toString, Infinity);
+DEF_PARAM("music", parseBool, toString, true);
 
 function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
@@ -670,7 +671,7 @@ export default async function start() {
 
     const step_limit = GET_PARAM("loop");
     let steps = 0;
-    let step_sign = 1;
+    let step_sign = 0;
 
     // control loop
     function animate() {
@@ -704,6 +705,15 @@ export default async function start() {
     // Setup UI controls
     setupUI();
 
+    const music = html("audio", { src: "./Chenresi-dewa.mp3" });
+
     RELOAD();
+    
+    if (GET_PARAM("music")) {
+        await fetch(music.src);
+        music.play();
+    }
+    
+    step_sign = 1;
 }
 

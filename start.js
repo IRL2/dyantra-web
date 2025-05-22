@@ -655,7 +655,7 @@ export default async function start() {
         ray.origin.setFromMatrixPosition(camera.matrixWorld);
 
         const depth = GET_PARAM("depth");
-        const scale = 1 * .5; // + Math.max(depth - 2, 0) * .5;
+        const scale = GET_PARAM("zoom"); // + Math.max(depth - 2, 0) * .5;
 
         ray.at(depth, target);
         objects.scale.set(scale, scale, scale);
@@ -669,7 +669,8 @@ export default async function start() {
 
     // control loop
     function animate() {
-        const dt = 0.02; //Math.min(1/15, clock.getDelta());
+        const dt = 0.01; //Math.min(1/15, clock.getDelta());
+        // const dt = 0;
 
         if (renderer.xr.isPresenting) {
             update_xr(dt);

@@ -632,7 +632,7 @@ export default async function start() {
     renderer.xr.addEventListener("sessionend", exit_xr);
 
     function enter_xr() {
-        pointsMaterial.size = .01;
+        pointsMaterial.size = .01 * 1.2;
         objects.position.set(0, 1, -1);
     }
 
@@ -655,7 +655,7 @@ export default async function start() {
         ray.origin.setFromMatrixPosition(camera.matrixWorld);
 
         const depth = GET_PARAM("depth");
-        const scale = 1 + Math.max(depth - 2, 0) * .5;
+        const scale = 1 * .5; // + Math.max(depth - 2, 0) * .5;
 
         ray.at(depth, target);
         objects.scale.set(scale, scale, scale);
@@ -669,7 +669,7 @@ export default async function start() {
 
     // control loop
     function animate() {
-        const dt = Math.min(1/15, clock.getDelta());
+        const dt = 0.02; //Math.min(1/15, clock.getDelta());
 
         if (renderer.xr.isPresenting) {
             update_xr(dt);

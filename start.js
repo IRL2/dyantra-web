@@ -675,9 +675,7 @@ export default async function start() {
 
     // control loop
     function animate() {
-
-        const dt = 0.01 * step_sign; //Math.min(1/15, clock.getDelta());
-        // const dt = 0;
+        const dt = Math.min(1/15, clock.getDelta());
 
         steps += step_sign;
         if (steps > step_limit) {
@@ -692,7 +690,7 @@ export default async function start() {
             update_xr(dt);
         }
 
-        updateParticles(dt);
+        updateParticles(0.01 * step_sign);
         renderer.render(scene, camera);
 
         attractorGroup.visible = IS_MENU_OPEN();

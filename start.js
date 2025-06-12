@@ -91,6 +91,10 @@ function serializeAttractor(attractor) {
     return [x, y, z, radius, amplitude].join(",");
 }
 
+function parseColor(text) {
+    return new THREE.Color("#" + text);
+}
+
 DEF_PARAM("count", parseFloat, toString, Math.pow(2, 13));
 DEF_PARAM("attractors", parseBool, toString, false);
 DEF_PARAM("velocity", parseBool, toString, true);
@@ -103,6 +107,7 @@ DEF_PARAM("attractor", parseAttractor, serializeAttractor,
 DEF_PARAM("depth", parseFloat, toString, 2);
 DEF_PARAM("loop", parseFloat, toString, Infinity);
 DEF_PARAM("music", parseBool, toString, true);
+DEF_PARAM("color", parseColor, (color) => color?.getHexString(), undefined);
 
 function READ_PARAMS() {
     const params = new URLSearchParams(document.location.search);
@@ -565,6 +570,7 @@ export default async function start() {
         }
 
         const velocityColored = GET_PARAM("velocity");
+        const color = GET_PARAM("color");
 
         // next.v = prev.v + (prev.f + next.f) * s;
         for (let i = 0; i < prev.count; ++i) {
@@ -578,7 +584,10 @@ export default async function start() {
             temp_v.toArray(next.v, i*3);
 
             // color by velocity
-            if (velocityColored) {
+            if (color) {
+                temp_c.set(color);
+                temp_c.toArray(next.c, i*3);
+            } else if (velocityColored) {
                 const v = temp_v.lengthSq();
                 temp_c.setHSL(v, .75, .5);
                 temp_c.toArray(next.c, i*3);

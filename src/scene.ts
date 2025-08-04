@@ -35,6 +35,7 @@ const CANVAS_ID = 'scene'
 
 let canvas: HTMLElement
 let renderer: WebGLRenderer
+let audio = document.createElement("audio");
 let scene: Scene
 let camera: OrthographicCamera
 let stats: Stats
@@ -42,6 +43,13 @@ let gui: GUI
 let objects: Object3D
 
 async function init() {
+  READ_PARAMS();
+
+  for (const [id, values] of PARAM_VALS) {
+    console.log(id, values);
+  }
+
+
   // ===== 🖼️ CANVAS, RENDERER, & SCENE =====
   {
     canvas = document.querySelector(`canvas#${CANVAS_ID}`)!
@@ -106,55 +114,133 @@ async function init() {
     document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ["hand-tracking"] }));
   }
 
-  // ==== 🐞 DEBUG GUI ====
-  // {
-    gui = new GUI({ title: '🐞 Debug GUI', width: 300 })
+  gui = new GUI({ title: 'Configuration', width: 300 })
 
-    const shapePaths = [
-      { name: "Tara Crown", path: "tara-crown-perfect.svg" },
-    ];
-
-    async function loadShape(path: string) {
-      path = new URL("./svgs/" + path, window.location.href).toString();
-      const response = await fetch(path);
-      const text = await response.text();
-      const svg = new DOMParser().parseFromString(text, "image/svg+xml");
-      const points = generate_points_svg(svg, next);
-
-      next.p = points;
-      center_points(next);
-      prev.p.set(next.p);
-      prev.c.set(next.c);
-    }
-
-    const trajectoryFolder = gui.addFolder("Shapes");
-    for (const { name, path } of shapePaths) {
-      trajectoryFolder.add({ load: () => loadShape(path) }, "load").name(name);
-    }
-
-    // persist GUI state in local storage on changes
-    gui.onFinishChange(() => {
-      const guiState = gui.save()
-      localStorage.setItem('guiState', JSON.stringify(guiState))
-    })
-
-    // load GUI state if available in local storage
-    const guiState = localStorage.getItem('guiState')
-    if (guiState) gui.load(JSON.parse(guiState))
-
-    // reset GUI state button
-    const resetGui = () => {
-      localStorage.removeItem('guiState')
-      gui.reset()
-    }
-    gui.add({ resetGui }, 'resetGui').name('RESET')
-  // }
-
-  READ_PARAMS();
-
-  for (const [id, values] of PARAM_VALS) {
-    console.log(id, values);
+  const settings = {
+    count: GET_PARAM("count"),
+    zoom: GET_PARAM("zoom"),
+    depth: GET_PARAM("depth"),
+    velocity: GET_PARAM("velocity"),
+    music: GET_PARAM("music"),
   }
+
+  const generalFolder = gui.addFolder("General");
+  const countSlider = generalFolder.add(settings, "count", 5000, 250000, 5000).name("Particle Count");
+  const zoomSlider = generalFolder.add(settings, "zoom", .1, 2, .1).name("Zoom");
+  const depthSlider = generalFolder.add(settings, "depth", 0, 10, .05).name("VR Distance");
+  const velocityToggle = generalFolder.add(settings, "velocity").name("Color by Velocity");
+  const musicToggle = generalFolder.add(settings, "music").name("Play Music");
+
+  countSlider.onFinishChange((count: number) => {
+    SET_PARAM("count", count);
+    RESIZE_PARTICLE_COUNT(count);
+    loadShape(shapePaths[0].path);
+  });
+
+  zoomSlider.onChange((zoom: number) => {
+    SET_PARAM("zoom", zoom);
+    UPDATE_VIEWPORT();
+  });
+
+  depthSlider.onChange((depth: number) => SET_PARAM("depth", depth));
+  velocityToggle.onChange((velocity: boolean) => SET_PARAM("velocity", velocity));
+
+  musicToggle.onChange((music: boolean) => {
+    SET_PARAM("music", music);
+
+    if (!music) {
+      audio.pause();
+    } else {
+      audio.currentTime = 0;
+      audio.play();
+    }
+  });
+
+  const shapePaths = [
+    { name: "Tara Crown", path: "tara-crown-perfect.svg" },
+    { name: "Tara Heart Lotus", path: "tara-crown-heart-lotus.svg" },
+    { name: "Tara Face", path: "tara-face.svg" },
+    { name: "Tara Yantra", path: "tara-yantra.svg" },
+    // { name: "Seasonal Circle", path: "cir-seasonal-us.svg" },
+  ];
+
+  async function loadShape(path: string) {
+    RESIZE_PARTICLE_COUNT(next.count);
+
+    path = new URL("./svgs/" + path, window.location.href).toString();
+    const response = await fetch(path);
+    const text = await response.text();
+    const svg = new DOMParser().parseFromString(text, "image/svg+xml");
+    const points = generate_points_svg(svg, next);
+
+    next.p = points;
+    center_points(next);
+    prev.p.set(next.p);
+    prev.c.set(next.c);
+  }
+
+  const svgsFolder = gui.addFolder("Shapes");
+  for (const { name, path } of shapePaths) {
+    svgsFolder.add({ load: () => loadShape(path) }, "load").name(name);
+  }
+
+  async function pickAndLoadSVG()
+  {
+    const [file] = await pickFiles(".svg");
+    const text = await textFromFile(file);
+    const parser = new DOMParser();
+    const svg = parser.parseFromString(text, "image/svg+xml");
+    const points = generate_points_svg(svg, next);
+
+    RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+    next.p = points;
+    center_points(next);
+    prev.p.set(next.p);
+    prev.c.set(next.c);
+  } 
+
+  svgsFolder.add({ load: () => pickAndLoadSVG() }, "load").name("Use SVG File");
+
+  let attractorsFolder = gui.addFolder("Attractors");
+
+  function refreshAttractorsUI() {
+    attractorsFolder.destroy();
+    attractorsFolder = gui.addFolder("Attractors");
+
+    const attractors = GET_PARAM_ALL("attractor") as Attractor[];
+
+    function refresh() {
+      refreshAttractorObjects();
+      SET_PARAM_ALL("attractor", ...attractors);
+    }
+
+    for (const attractor of attractors) {
+      function remove() {
+        attractors.splice(attractors.findIndex((v) => v == attractor), 1);
+        refreshAttractorObjects();
+        SET_PARAM_ALL("attractor", ...attractors);
+        refreshAttractorsUI();
+      }
+
+      const folder = attractorsFolder.addFolder("Attractor");
+      folder.add(attractor.position, "x", -1, 1, .1).onChange(refresh);
+      folder.add(attractor.position, "y", -1, 1, .1).onChange(refresh);
+      folder.add(attractor.position, "z", -1, 1, .1).onChange(refresh);
+      folder.add(attractor, "radius", 0, 1, .05).onChange(refresh);
+      folder.add(attractor, "amplitude", -1, 1, .1).onChange(refresh);
+      folder.add({ remove }, "remove").name("Remove");
+    }
+
+    function add() {
+      attractors.push(make_attractor(new Vector3(0, 0, 0), 1, .05));
+      refreshAttractorObjects();
+      SET_PARAM_ALL("attractor", ...attractors);
+      refreshAttractorsUI();
+    }
+
+    attractorsFolder.add({ add }, "add").name("Add");
+  }
+  refreshAttractorsUI();
 
   let prev: State, next: State;
 
@@ -314,9 +400,8 @@ async function init() {
     }
   }
 
-  const menu = document.getElementById('ui-panel');
   function IS_MENU_OPEN() {
-    return menu?.classList.contains("visible") ?? true;
+    return !gui._closed;
   }
 
   // fit browser window
@@ -421,16 +506,15 @@ async function init() {
   }
 
   if (GET_PARAM("music")) {
-    const music = document.createElement("audio");
-    music.src = "./chenresi-dewa.mp3"
-    await fetch(music.src);
+    audio.src = "./chenresi-dewa.mp3"
+    await fetch(audio.src);
 
     try {
-      await music.play();
+      await audio.play();
     } catch (e) {
       step_sign = 0;
       document.addEventListener("click", () => {
-        music.play();
+        audio.play();
         step_sign = 1;
       }, { once: true });
     }
@@ -591,6 +675,37 @@ function generate_points_svg(svg: Document, state: State) {
   }
 
   return points;
+}
+
+export async function pickFiles(accept = "*", multiple = false): Promise<File[]> {
+  return new Promise((resolve) => {
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = accept;
+    fileInput.multiple = multiple;
+    fileInput.style = "visibility: collapse";
+
+    console.log(fileInput)
+
+    document.body.append(fileInput);
+    function done(files: File[]) {
+      fileInput.remove();
+      resolve(files);
+    }
+
+    fileInput.addEventListener("change", () => done(Array.from(fileInput.files!)));
+    fileInput.addEventListener("cancel", () => done([]));
+    fileInput.click();
+  });
+}
+
+export async function textFromFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsText(file);
+  });
 }
 
 init()

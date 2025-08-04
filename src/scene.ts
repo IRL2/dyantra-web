@@ -180,31 +180,6 @@ async function init() {
   let pointsObject = new Points(make_particle_geometry(1), pointsMaterial);
   RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
 
-
-  async function RELOAD() {
-    // RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
-
-    // const svgurl = GET_PARAM("svg");
-
-    // if (svgurl) {
-    //   const svg = await loadSVG(svgurl);
-    //   generate_points_svg(svg, next);
-    // } else {
-    //   generate_points(next);
-    // }
-
-    // center_points(next);
-    // prev.c.set(next.c);
-  }
-
-  async function pickSVG() {
-    const [file] = await pickFiles("*.svg");
-    const text = await textFromFile(file);
-    const parser = new DOMParser();
-    const svg = parser.parseFromString(text, "image/svg+xml");
-    return svg;
-  }
-
   function center_points(state: State) {
     const center = new Vector3();
     const bounds = new Box3();
@@ -266,8 +241,10 @@ async function init() {
     // update graphics buffers
     const positions = pointsGeometry.getAttribute("position");
     const colors = pointsGeometry.getAttribute("color");
+    // @ts-ignore
     positions.array = next.p;
     positions.needsUpdate = true;
+    // @ts-ignore
     colors.array = next.c;
     colors.needsUpdate = true;
 
@@ -485,40 +462,6 @@ function make_attractor(position: Vector3, radius: number, amplitude: number) {
   }
 }
 
-function generate_points(state: State) {
-  const count = state.count;
-  const count1 = (state.count / 2) | 0;
-  const count2 = count - count1;
-
-  const counts = [count1, count2];
-  let offset = 0;
-
-  const temp_p = new Vector3();
-  const temp_c = new Color().setHSL(.45, .75, .5);
-
-  for (let c = 0; c < counts.length; ++c) {
-    const count = counts[c];
-
-    for (let i = 0; i < count; ++i) {
-      const angle = Math.PI * 2 * i / count;
-      const off = Math.sin(angle * 8 + c * Math.PI) * .05 - c * .1;
-      const mag = 1 + off * 2;
-      temp_p.set(
-        Math.cos(angle) * mag,
-        Math.sin(angle) * mag,
-        0,
-      );
-
-      temp_c.setHSL(angle % 1, .75, .5);
-
-      temp_p.toArray(state.p, (i + offset) * 3);
-      temp_c.toArray(state.c, (i + offset) * 3);
-    }
-
-    offset += count;
-  }
-}
-
 function make_particle_geometry(count: number) {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(count * 3), 3));
@@ -588,20 +531,20 @@ function WRITE_PARAMS() {
   window.history.replaceState({}, "", url.toString());
 }
 
-function GET_PARAM(id: string) {
+export function GET_PARAM(id: string) {
   return PARAM_VALS.get(id)[0];
 }
 
-function SET_PARAM(id: string, value: any) {
+export function SET_PARAM(id: string, value: any) {
   PARAM_VALS.set(id, [value]);
   WRITE_PARAMS();
 }
 
-function GET_PARAM_ALL(id: string) {
+export function GET_PARAM_ALL(id: string) {
   return PARAM_VALS.get(id);
 }
 
-function SET_PARAM_ALL(id: string, ...values: any[]) {
+export function SET_PARAM_ALL(id: string, ...values: any[]) {
   PARAM_VALS.set(id, values);
   WRITE_PARAMS();
 }

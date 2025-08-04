@@ -126,7 +126,7 @@ async function init() {
 
   const generalFolder = gui.addFolder("General");
   const countSlider = generalFolder.add(settings, "count", 5000, 250000, 5000).name("Particle Count");
-  const zoomSlider = generalFolder.add(settings, "zoom", .1, 2, .1).name("Zoom");
+  const zoomSlider = generalFolder.add(settings, "zoom", .1, 2, .05).name("Zoom");
   const depthSlider = generalFolder.add(settings, "depth", 0, 10, .05).name("VR Distance");
   const velocityToggle = generalFolder.add(settings, "velocity").name("Color by Velocity");
   const musicToggle = generalFolder.add(settings, "music").name("Play Music");
@@ -210,15 +210,15 @@ async function init() {
     const attractors = GET_PARAM_ALL("attractor") as Attractor[];
 
     function refresh() {
-      refreshAttractorObjects();
       SET_PARAM_ALL("attractor", ...attractors);
+      refreshAttractors();
     }
 
     for (const attractor of attractors) {
       function remove() {
         attractors.splice(attractors.findIndex((v) => v == attractor), 1);
-        refreshAttractorObjects();
         SET_PARAM_ALL("attractor", ...attractors);
+      refreshAttractors();
         refreshAttractorsUI();
       }
 
@@ -233,8 +233,8 @@ async function init() {
 
     function add() {
       attractors.push(make_attractor(new Vector3(0, 0, 0), 1, .05));
-      refreshAttractorObjects();
       SET_PARAM_ALL("attractor", ...attractors);
+      refreshAttractors();
       refreshAttractorsUI();
     }
 
@@ -303,7 +303,12 @@ async function init() {
   const temp_v = new Vector3();
   const temp_c = new Color();
 
-  const attractors = GET_PARAM_ALL("attractor");
+  let attractors = GET_PARAM_ALL("attractor");
+  function refreshAttractors() {
+    READ_PARAMS();
+    attractors = GET_PARAM_ALL("attractor");
+    refreshAttractorObjects();
+  }
 
   // render attractors
   const attractorGroup = new Object3D();

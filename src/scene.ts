@@ -1,0 +1,653 @@
+import GUI from 'lil-gui'
+import {
+  AdditiveBlending,
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  BufferGeometryEventMap,
+  Clock,
+  Color,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  NormalBufferAttributes,
+  Object3D,
+  OrthographicCamera,
+  Points,
+  PointsMaterial,
+  Ray,
+  Scene,
+  SphereGeometry,
+  TextureLoader,
+  Vector3,
+  WebGLRenderer,
+} from 'three'
+import Stats from 'stats.js'
+import { toggleFullScreen } from './helpers/fullscreen'
+import './style.css'
+import { VRButton } from 'three/examples/jsm/webxr/VRButton.js'
+import { OculusHandModel } from 'three/addons/webxr/OculusHandModel.js';
+
+type State = ReturnType<typeof make_particle_state>;
+type Attractor = ReturnType<typeof make_attractor>;
+
+const CANVAS_ID = 'scene'
+
+let canvas: HTMLElement
+let renderer: WebGLRenderer
+let scene: Scene
+let camera: OrthographicCamera
+let stats: Stats
+let gui: GUI
+let objects: Object3D
+
+async function init() {
+  // ===== 🖼️ CANVAS, RENDERER, & SCENE =====
+  {
+    canvas = document.querySelector(`canvas#${CANVAS_ID}`)!
+    renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    scene = new Scene()
+
+    renderer.setAnimationLoop(animate);
+
+    renderer.xr.enabled = true;
+    renderer.xr.addEventListener("sessionstart", enter_xr);
+    renderer.xr.addEventListener("sessionend", exit_xr);
+
+    function enter_xr() {
+      const session = renderer.xr.getSession()!;
+      console.log(session.enabledFeatures);
+      // session.addEventListener('select', onSelect);
+    }
+
+    function exit_xr() {
+
+    }
+  }
+
+  // ===== 📦 OBJECTS =====
+  {
+    objects = new Object3D();
+    scene.add(objects);
+  }
+
+  // ===== 🎥 CAMERA =====
+  {
+    camera = new OrthographicCamera(-1, 1, 1, -1, -500, 500);
+    camera.position.set(0, 0, 1);
+    camera.lookAt(new Vector3(0, 0, 0));
+  }
+
+  // ===== 🕹️ CONTROLS =====
+  {
+    // Full screen
+    window.addEventListener('dblclick', (event) => {
+      if (event.target === canvas) {
+        toggleFullScreen(canvas)
+      }
+    })
+  }
+
+  {
+    const hand1 = renderer.xr.getHand(0);
+    hand1.add(new OculusHandModel(hand1));
+    scene.add(hand1);
+
+    const hand2 = renderer.xr.getHand(1);
+    hand2.add(new OculusHandModel(hand2));
+    scene.add(hand2);
+  }
+
+  // ===== 📈 STATS & CLOCK =====
+  {
+    stats = new Stats()
+    document.body.appendChild(stats.dom)
+    document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ["hand-tracking"] }));
+  }
+
+  // ==== 🐞 DEBUG GUI ====
+  // {
+    gui = new GUI({ title: '🐞 Debug GUI', width: 300 })
+
+    const shapePaths = [
+      { name: "Tara Crown", path: "tara-crown-perfect.svg" },
+    ];
+
+    async function loadShape(path: string) {
+      path = new URL("./svgs/" + path, window.location.href).toString();
+      const response = await fetch(path);
+      const text = await response.text();
+      const svg = new DOMParser().parseFromString(text, "image/svg+xml");
+      const points = generate_points_svg(svg, next);
+
+      next.p = points;
+      center_points(next);
+      prev.p.set(next.p);
+      prev.c.set(next.c);
+    }
+
+    const trajectoryFolder = gui.addFolder("Shapes");
+    for (const { name, path } of shapePaths) {
+      trajectoryFolder.add({ load: () => loadShape(path) }, "load").name(name);
+    }
+
+    // persist GUI state in local storage on changes
+    gui.onFinishChange(() => {
+      const guiState = gui.save()
+      localStorage.setItem('guiState', JSON.stringify(guiState))
+    })
+
+    // load GUI state if available in local storage
+    const guiState = localStorage.getItem('guiState')
+    if (guiState) gui.load(JSON.parse(guiState))
+
+    // reset GUI state button
+    const resetGui = () => {
+      localStorage.removeItem('guiState')
+      gui.reset()
+    }
+    gui.add({ resetGui }, 'resetGui').name('RESET')
+  // }
+
+  READ_PARAMS();
+
+  for (const [id, values] of PARAM_VALS) {
+    console.log(id, values);
+  }
+
+  let prev: State, next: State;
+
+  function RESIZE_PARTICLE_COUNT(count: number) {
+    pointsGeometry?.dispose();
+    pointsGeometry = make_particle_geometry(count);
+    pointsObject.geometry = pointsGeometry;
+
+    prev = make_particle_state(count);
+    next = make_particle_state(count);
+  }
+
+  const pointsMaterial = new PointsMaterial({
+    size: 4,
+    map: new TextureLoader().load("particle.webp"),
+    vertexColors: true,
+    transparent: true,
+    blending: AdditiveBlending,
+    depthWrite: false,
+  });
+
+  let pointsGeometry: BufferGeometry<NormalBufferAttributes, BufferGeometryEventMap>;
+  let pointsObject = new Points(make_particle_geometry(1), pointsMaterial);
+  RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+
+
+  async function RELOAD() {
+    // RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+
+    // const svgurl = GET_PARAM("svg");
+
+    // if (svgurl) {
+    //   const svg = await loadSVG(svgurl);
+    //   generate_points_svg(svg, next);
+    // } else {
+    //   generate_points(next);
+    // }
+
+    // center_points(next);
+    // prev.c.set(next.c);
+  }
+
+  async function pickSVG() {
+    const [file] = await pickFiles("*.svg");
+    const text = await textFromFile(file);
+    const parser = new DOMParser();
+    const svg = parser.parseFromString(text, "image/svg+xml");
+    return svg;
+  }
+
+  function center_points(state: State) {
+    const center = new Vector3();
+    const bounds = new Box3();
+    const position = new Vector3();
+
+    for (let i = 0; i < state.count; ++i) {
+      position.fromArray(state.p, i * 3);
+      center.add(position);
+      bounds.expandByPoint(position);
+    }
+
+    center.multiplyScalar(1 / state.count);
+    const size = bounds.getSize(new Vector3());
+    const axis = Math.max(size.x, size.y);
+    const scale = new Vector3(1 / axis, 1 / axis, 1);
+
+    for (let i = 0; i < state.count; ++i) {
+      position.fromArray(state.p, i * 3);
+      position.sub(center);
+      position.multiply(scale);
+      position.toArray(state.p, i * 3);
+    }
+  }
+
+  const clock = new Clock();
+
+  objects.add(pointsObject);
+
+  scene.add(objects);
+
+  // physics
+  const temp = new Vector3();
+  const temp_p = new Vector3();
+  const temp_f = new Vector3();
+  const temp_v = new Vector3();
+  const temp_c = new Color();
+
+  const attractors = GET_PARAM_ALL("attractor");
+
+  // render attractors
+  const attractorGroup = new Object3D();
+  const attractorMat = new MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: .1, depthWrite: false });
+  function refreshAttractorObjects() {
+    attractorGroup.clear();
+    for (const attractor of attractors) {
+      const geo = new SphereGeometry(attractor.radius);
+      const sphere = new Mesh(geo, attractorMat);
+      sphere.position.copy(attractor.position);
+      attractorGroup.add(sphere);
+    }
+  }
+  refreshAttractorObjects();
+  objects.add(attractorGroup);
+
+  function updateParticles(dt: number) {
+    // flip prev/next buffers
+    [prev, next] = [next, prev];
+
+    // update graphics buffers
+    const positions = pointsGeometry.getAttribute("position");
+    const colors = pointsGeometry.getAttribute("color");
+    positions.array = next.p;
+    positions.needsUpdate = true;
+    colors.array = next.c;
+    colors.needsUpdate = true;
+
+    // factors
+    const m = 1;
+    const s1 = 0.5 * dt / m;
+    const s2 = 0.5 * dt * dt / m;
+
+    // next.p = prev.p + prev.v * dt + prev.f * s;
+    for (let i = 0; i < prev.count; ++i) {
+      temp_p.fromArray(prev.p, i * 3);
+      temp_v.fromArray(prev.v, i * 3);
+      temp_f.fromArray(prev.f, i * 3);
+
+      temp_p.addScaledVector(temp_v, dt);
+      temp_p.addScaledVector(temp_f, s2);
+
+      temp_p.toArray(next.p, i * 3);
+    }
+
+    // dp = prev.p - attractor.p
+    // exponent = (dp . dp) * attractor.inv_exp_denominator
+    // next.f = sum(dp * -attractor.coefficient * exp(exponent))
+    for (let i = 0; i < prev.count; ++i) {
+      temp_p.fromArray(prev.p, i * 3);
+      temp_f.set(0, 0, 0);
+
+      for (const attractor of attractors) {
+        temp.subVectors(temp_p, attractor.position);
+
+        const exp_numerator = temp.lengthSq();
+        const prefactor =
+          - attractor.coefficient
+          * Math.exp(exp_numerator * attractor.inv_exp_denominator);
+
+        temp.multiplyScalar(prefactor);
+
+        temp_f.add(temp);
+      }
+
+      temp_f.toArray(next.f, i * 3);
+    }
+
+    const velocityColored = GET_PARAM("velocity");
+    const color = GET_PARAM("color");
+
+    // next.v = prev.v + (prev.f + next.f) * s;
+    for (let i = 0; i < prev.count; ++i) {
+      temp_f.fromArray(prev.f, i * 3);
+      temp.fromArray(next.f, i * 3);
+      temp_f.add(temp)
+
+      temp_v.fromArray(prev.v, i * 3);
+      temp_v.addScaledVector(temp_f, s1);
+
+      temp_v.toArray(next.v, i * 3);
+
+      // color by velocity
+      if (color) {
+        temp_c.set(color);
+        temp_c.toArray(next.c, i * 3);
+      } else if (velocityColored) {
+        const v = temp_v.lengthSq();
+        temp_c.setHSL(v, .75, .5);
+        temp_c.toArray(next.c, i * 3);
+      }
+    }
+  }
+
+  const menu = document.getElementById('ui-panel');
+  function IS_MENU_OPEN() {
+    return menu?.classList.contains("visible") ?? true;
+  }
+
+  // fit browser window
+  function UPDATE_VIEWPORT() {
+    if (renderer.xr.isPresenting)
+      return;
+
+    const parent = renderer.domElement.parentElement!;
+    const { width, height } = parent.getBoundingClientRect();
+
+    const size = 1 / GET_PARAM("zoom");
+    const aspect = width / height;
+
+    pointsMaterial.size = 4 * GET_PARAM("zoom");
+
+    renderer.setSize(width, height, true);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    camera.left = size * aspect / -2;
+    camera.right = size * aspect / 2;
+    camera.top = size / -2;
+    camera.bottom = size / 2;
+
+    camera.updateProjectionMatrix();
+  }
+
+  window.addEventListener("resize", UPDATE_VIEWPORT);
+  UPDATE_VIEWPORT();
+
+  // xr mode
+  const target = new Vector3();
+  const rotation = new Matrix4();
+  const ray = new Ray();
+
+  renderer.xr.addEventListener("sessionstart", enter_xr);
+  renderer.xr.addEventListener("sessionend", exit_xr);
+
+  function enter_xr() {
+    pointsMaterial.size = .01 * 1.2;
+    objects.position.set(0, 1, -1);
+  }
+
+  function exit_xr() {
+    UPDATE_VIEWPORT();
+
+    pointsMaterial.size = 4;
+    objects.position.set(0, 0, 0);
+    objects.rotation.set(0, 0, 0);
+
+    camera.position.set(0, 0, 1);
+    camera.lookAt(new Vector3(0, 0, 0));
+  }
+
+  function update_xr(dt: number) {
+    const camera = renderer.xr.getCamera();
+
+    rotation.identity().extractRotation(camera.matrixWorld);
+    ray.direction.set(0, 0, -1).applyMatrix4(rotation);
+    ray.origin.setFromMatrixPosition(camera.matrixWorld);
+
+    const depth = GET_PARAM("depth");
+    const scale = GET_PARAM("zoom"); // + Math.max(depth - 2, 0) * .5;
+
+    ray.at(depth, target);
+    objects.scale.set(scale, scale, scale);
+
+    target.sub(objects.position);
+    target.multiplyScalar(dt);
+    objects.position.add(target);
+
+    objects.lookAt(ray.origin);
+  }
+
+  const step_limit = GET_PARAM("loop");
+  let steps = 0;
+  let step_sign = 1;
+
+  // control loop
+  function animate() {
+    const dt = Math.min(1 / 15, clock.getDelta());
+
+    steps += step_sign;
+    if (steps > step_limit) {
+      step_sign *= -1;
+    }
+
+    if (steps <= 0) {
+      step_sign = 0;
+    }
+
+    if (renderer.xr.isPresenting) {
+      update_xr(dt);
+    }
+
+    updateParticles(0.01 * step_sign);
+    renderer.render(scene, camera);
+
+    attractorGroup.visible = IS_MENU_OPEN();
+    if (IS_MENU_OPEN()) document.body.append(stats.dom);
+    else stats.dom.remove();
+    stats.update();
+  }
+
+  if (GET_PARAM("music")) {
+    const music = document.createElement("audio");
+    music.src = "./chenresi-dewa.mp3"
+    await fetch(music.src);
+
+    try {
+      await music.play();
+    } catch (e) {
+      step_sign = 0;
+      document.addEventListener("click", () => {
+        music.play();
+        step_sign = 1;
+      }, { once: true });
+    }
+  }
+
+  RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+  loadShape(shapePaths[0].path);
+}
+
+// import { pickFiles, textFromFile } from "./utility.js";
+
+function make_particle_state(count: number) {
+  return {
+    count,
+    p: new Float32Array(3 * count),
+    f: new Float32Array(3 * count),
+    v: new Float32Array(3 * count),
+    c: new Float32Array(3 * count),
+  };
+}
+
+function make_attractor(position: Vector3, radius: number, amplitude: number) {
+  return {
+    position,
+    radius,
+    amplitude,
+    coefficient: amplitude / (radius * radius),
+    inv_exp_denominator: 1 / (-2 * radius * radius),
+  }
+}
+
+function generate_points(state: State) {
+  const count = state.count;
+  const count1 = (state.count / 2) | 0;
+  const count2 = count - count1;
+
+  const counts = [count1, count2];
+  let offset = 0;
+
+  const temp_p = new Vector3();
+  const temp_c = new Color().setHSL(.45, .75, .5);
+
+  for (let c = 0; c < counts.length; ++c) {
+    const count = counts[c];
+
+    for (let i = 0; i < count; ++i) {
+      const angle = Math.PI * 2 * i / count;
+      const off = Math.sin(angle * 8 + c * Math.PI) * .05 - c * .1;
+      const mag = 1 + off * 2;
+      temp_p.set(
+        Math.cos(angle) * mag,
+        Math.sin(angle) * mag,
+        0,
+      );
+
+      temp_c.setHSL(angle % 1, .75, .5);
+
+      temp_p.toArray(state.p, (i + offset) * 3);
+      temp_c.toArray(state.c, (i + offset) * 3);
+    }
+
+    offset += count;
+  }
+}
+
+function make_particle_geometry(count: number) {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(count * 3), 3));
+  geometry.setAttribute("color", new BufferAttribute(new Float32Array(count * 3), 3));
+  return geometry;
+}
+
+const PARAM_DEFS = new Map<string, any>();
+const PARAM_VALS = new Map<string, any>();
+
+function DEF_PARAM<T>(id: string, deserializer: any, serializer: any, ...fallbacks: T[]) {
+  PARAM_DEFS.set(id, { id, deserializer, serializer, fallbacks });
+}
+
+const parseBool = (text: string) => text == "true";
+const parseString = (text: string) => text;
+const toString = (value: string) => value?.toString();
+
+function parseAttractor(text: string) {
+  const [x, y, z, radius, amplitude] = text.split(",").map((param) => parseFloat(param));
+  return make_attractor(new Vector3(x, y, z), radius, amplitude);
+}
+
+function serializeAttractor(attractor: Attractor) {
+  const { position, radius, amplitude } = attractor;
+  const { x, y, z } = position;
+  return [x, y, z, radius, amplitude].join(",");
+}
+
+function parseColor(text: string) {
+  return new Color("#" + text);
+}
+
+DEF_PARAM("count", parseFloat, toString, Math.pow(2, 13));
+DEF_PARAM("attractors", parseBool, toString, false);
+DEF_PARAM("velocity", parseBool, toString, true);
+DEF_PARAM("zoom", parseFloat, toString, 1);
+DEF_PARAM("svg", parseString, toString, undefined);
+DEF_PARAM("attractor", parseAttractor, serializeAttractor,
+  make_attractor(new Vector3(0, 0, 0).multiplyScalar(1), 1, .05),
+  make_attractor(new Vector3(0, 0, 0).multiplyScalar(1), .25, -.05),
+);
+DEF_PARAM("depth", parseFloat, toString, 2);
+DEF_PARAM("loop", parseFloat, toString, Infinity);
+DEF_PARAM("music", parseBool, toString, true);
+DEF_PARAM("color", parseColor, (color: Color) => color?.getHexString(), undefined);
+
+function READ_PARAMS() {
+  const params = new URLSearchParams(document.location.search);
+
+  for (const def of PARAM_DEFS.values()) {
+    const vals = params.getAll(def.id).map((text) => def.deserializer(text));
+    PARAM_VALS.set(def.id, vals.length > 0 ? vals : def.fallbacks);
+  }
+}
+
+function WRITE_PARAMS() {
+  const url = new URL(location.href.replace(location.search, ""));
+
+  for (const def of PARAM_DEFS.values()) {
+    for (const value of PARAM_VALS.get(def.id)) {
+      const text = def.serializer(value);
+      if (text) url.searchParams.append(def.id, text);
+    }
+  }
+
+  window.history.replaceState({}, "", url.toString());
+}
+
+function GET_PARAM(id: string) {
+  return PARAM_VALS.get(id)[0];
+}
+
+function SET_PARAM(id: string, value: any) {
+  PARAM_VALS.set(id, [value]);
+  WRITE_PARAMS();
+}
+
+function GET_PARAM_ALL(id: string) {
+  return PARAM_VALS.get(id);
+}
+
+function SET_PARAM_ALL(id: string, ...values: any[]) {
+  PARAM_VALS.set(id, values);
+  WRITE_PARAMS();
+}
+
+function generate_points_svg(svg: Document, state: State) {
+  const geometries = svg.querySelectorAll("path");
+  let offset = 0;
+  let error = 0;
+
+  const lengths = Array.from(geometries).map((geometry) => geometry.getTotalLength());
+  const lengthsTotal = lengths.reduce((a, b) => a + b);
+
+  const total = state.count;
+  const position = new Vector3();
+  const points = new Float32Array(total * 3);
+
+  for (let i = 0; i < geometries.length; ++i) {
+    const geometry = geometries[i];
+
+    const share = lengths[i] / lengthsTotal;
+    let count = Math.floor(total * share);
+    const delta = lengths[i] / count;
+
+    error += count * share - count;
+
+    if (error > 0) {
+      count += Math.ceil(error);
+      error -= Math.ceil(error);
+    }
+
+    const matrix = geometry.transform.baseVal.consolidate()?.matrix;
+
+    for (let j = 0; j < count && j < count; ++j) {
+      let point = geometry.getPointAtLength(j * delta);
+      if (matrix) {
+        point = point.matrixTransform(matrix);
+      }
+
+      position.set(point.x, point.y, 0);
+      position.toArray(points, offset + j * 3);
+    }
+
+    offset += count * 3;
+  }
+
+  return points;
+}
+
+init()

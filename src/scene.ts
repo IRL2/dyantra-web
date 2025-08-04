@@ -26,7 +26,6 @@ import Stats from 'stats.js'
 import { toggleFullScreen } from './helpers/fullscreen'
 import './style.css'
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js'
-import { OculusHandModel } from 'three/addons/webxr/OculusHandModel.js';
 
 type State = ReturnType<typeof make_particle_state>;
 type Attractor = ReturnType<typeof make_attractor>;
@@ -49,70 +48,44 @@ async function init() {
     console.log(id, values);
   }
 
+  canvas = document.querySelector(`canvas#${CANVAS_ID}`)!
+  renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  scene = new Scene()
 
-  // ===== 🖼️ CANVAS, RENDERER, & SCENE =====
-  {
-    canvas = document.querySelector(`canvas#${CANVAS_ID}`)!
-    renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    scene = new Scene()
+  renderer.setAnimationLoop(animate);
 
-    renderer.setAnimationLoop(animate);
+  renderer.xr.enabled = true;
+  renderer.xr.addEventListener("sessionstart", enter_xr);
+  renderer.xr.addEventListener("sessionend", exit_xr);
 
-    renderer.xr.enabled = true;
-    renderer.xr.addEventListener("sessionstart", enter_xr);
-    renderer.xr.addEventListener("sessionend", exit_xr);
+  function enter_xr() {
+    const session = renderer.xr.getSession()!;
+    console.log(session.enabledFeatures);
+    // session.addEventListener('select', onSelect);
+  }
 
-    function enter_xr() {
-      const session = renderer.xr.getSession()!;
-      console.log(session.enabledFeatures);
-      // session.addEventListener('select', onSelect);
+  function exit_xr() {
+
+  }
+
+  objects = new Object3D();
+  scene.add(objects);
+
+  camera = new OrthographicCamera(-1, 1, 1, -1, -500, 500);
+  camera.position.set(0, 0, 1);
+  camera.lookAt(new Vector3(0, 0, 0));
+
+  // Full screen
+  window.addEventListener('dblclick', (event) => {
+    if (event.target === canvas) {
+      toggleFullScreen(canvas)
     }
+  });
 
-    function exit_xr() {
-
-    }
-  }
-
-  // ===== 📦 OBJECTS =====
-  {
-    objects = new Object3D();
-    scene.add(objects);
-  }
-
-  // ===== 🎥 CAMERA =====
-  {
-    camera = new OrthographicCamera(-1, 1, 1, -1, -500, 500);
-    camera.position.set(0, 0, 1);
-    camera.lookAt(new Vector3(0, 0, 0));
-  }
-
-  // ===== 🕹️ CONTROLS =====
-  {
-    // Full screen
-    window.addEventListener('dblclick', (event) => {
-      if (event.target === canvas) {
-        toggleFullScreen(canvas)
-      }
-    })
-  }
-
-  {
-    const hand1 = renderer.xr.getHand(0);
-    hand1.add(new OculusHandModel(hand1));
-    scene.add(hand1);
-
-    const hand2 = renderer.xr.getHand(1);
-    hand2.add(new OculusHandModel(hand2));
-    scene.add(hand2);
-  }
-
-  // ===== 📈 STATS & CLOCK =====
-  {
-    stats = new Stats()
-    document.body.appendChild(stats.dom)
-    document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ["hand-tracking"] }));
-  }
+  stats = new Stats()
+  document.body.appendChild(stats.dom)
+  document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ["hand-tracking"] }));
 
   gui = new GUI({ title: 'Configuration', width: 300 })
 
@@ -293,8 +266,6 @@ async function init() {
   const clock = new Clock();
 
   objects.add(pointsObject);
-
-  scene.add(objects);
 
   // physics
   const temp = new Vector3();

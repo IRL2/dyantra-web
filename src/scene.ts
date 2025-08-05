@@ -134,7 +134,7 @@ async function init() {
     SET_PARAM("color", new Color(color), false);
   });
 
-  colorWheel.onFinishChange((color: string) => {
+  colorWheel.onFinishChange(() => {
     console.log("FINISH");
     WRITE_PARAMS();
   });

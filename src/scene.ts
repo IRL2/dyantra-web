@@ -94,14 +94,16 @@ async function init() {
     depth: GET_PARAM("depth"),
     velocity: GET_PARAM("velocity"),
     music: GET_PARAM("music"),
+    color: GET_PARAM("color") ?? "#ffffff",
   }
 
   const generalFolder = gui.addFolder("General");
   const countSlider = generalFolder.add(settings, "count", 5000, 250000, 5000).name("Particle Count");
   const zoomSlider = generalFolder.add(settings, "zoom", .1, 2, .05).name("Zoom");
   const depthSlider = generalFolder.add(settings, "depth", 0, 10, .05).name("VR Distance");
-  const velocityToggle = generalFolder.add(settings, "velocity").name("Color by Velocity");
   const musicToggle = generalFolder.add(settings, "music").name("Play Music");
+  const velocityToggle = generalFolder.add(settings, "velocity").name("Color by Velocity");
+  const colorWheel = generalFolder.addColor(settings, "color").name("Particle Color");
 
   countSlider.onFinishChange((count: number) => {
     SET_PARAM("count", count);
@@ -125,6 +127,16 @@ async function init() {
       audio.currentTime = 0;
       audio.play();
     }
+  });
+
+  colorWheel.onChange((color: string) => {
+    SET_PARAM("velocity", false, false);
+    SET_PARAM("color", new Color(color), false);
+  });
+
+  colorWheel.onFinishChange((color: string) => {
+    console.log("FINISH");
+    WRITE_PARAMS();
   });
 
   const shapePaths = [
@@ -176,6 +188,7 @@ async function init() {
   svgsFolder.add({ load: () => pickAndLoadSVG() }, "load").name("Use SVG File");
 
   let attractorsFolder = gui.addFolder("Attractors");
+  attractorsFolder.close();
 
   function refreshAttractorsUI() {
     attractorsFolder.destroy();
@@ -367,12 +380,12 @@ async function init() {
       temp_v.toArray(next.v, i * 3);
 
       // color by velocity
-      if (color) {
-        temp_c.set(color);
-        temp_c.toArray(next.c, i * 3);
-      } else if (velocityColored) {
+      if (velocityColored) {
         const v = temp_v.lengthSq();
         temp_c.setHSL(v, .75, .5);
+        temp_c.toArray(next.c, i * 3);
+      } else {
+        temp_c.set(color);
         temp_c.toArray(next.c, i * 3);
       }
     }
@@ -571,7 +584,7 @@ DEF_PARAM("attractor", parseAttractor, serializeAttractor,
 DEF_PARAM("depth", parseFloat, toString, 2);
 DEF_PARAM("loop", parseFloat, toString, Infinity);
 DEF_PARAM("music", parseBool, toString, true);
-DEF_PARAM("color", parseColor, (color: Color) => color?.getHexString(), undefined);
+DEF_PARAM("color", parseColor, (color: Color) => color?.getHexString(), new Color(1, 1, 1));
 
 function READ_PARAMS() {
   const params = new URLSearchParams(document.location.search);
@@ -599,9 +612,9 @@ export function GET_PARAM(id: string) {
   return PARAM_VALS.get(id)[0];
 }
 
-export function SET_PARAM(id: string, value: any) {
+export function SET_PARAM(id: string, value: any, updateurl=true) {
   PARAM_VALS.set(id, [value]);
-  WRITE_PARAMS();
+  if (updateurl) WRITE_PARAMS();
 }
 
 export function GET_PARAM_ALL(id: string) {

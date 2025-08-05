@@ -59,16 +59,6 @@ async function init() {
   renderer.xr.addEventListener("sessionstart", enter_xr);
   renderer.xr.addEventListener("sessionend", exit_xr);
 
-  function enter_xr() {
-    const session = renderer.xr.getSession()!;
-    console.log(session.enabledFeatures);
-    // session.addEventListener('select', onSelect);
-  }
-
-  function exit_xr() {
-
-  }
-
   objects = new Object3D();
   scene.add(objects);
 
@@ -87,7 +77,15 @@ async function init() {
   document.body.appendChild(stats.dom)
   document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ["hand-tracking"] }));
 
+  function RESET() {
+    const path = GET_PARAM("svg") ?? shapePaths[0].path;
+
+    RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
+    loadShape(path);
+  }
+
   gui = new GUI({ title: 'Configuration', width: 300 })
+  gui.close();
 
   const settings = {
     count: GET_PARAM("count"),
@@ -106,8 +104,7 @@ async function init() {
 
   countSlider.onFinishChange((count: number) => {
     SET_PARAM("count", count);
-    RESIZE_PARTICLE_COUNT(count);
-    loadShape(shapePaths[0].path);
+    RESET();
   });
 
   zoomSlider.onChange((zoom: number) => {
@@ -137,10 +134,13 @@ async function init() {
     // { name: "Seasonal Circle", path: "cir-seasonal-us.svg" },
   ];
 
+  for (const shape of shapePaths)
+  {
+    shape.path = new URL("./svgs/" + shape.path, window.location.href).toString();
+  }
+
   async function loadShape(path: string) {
     RESIZE_PARTICLE_COUNT(next.count);
-
-    path = new URL("./svgs/" + path, window.location.href).toString();
     const response = await fetch(path);
     const text = await response.text();
     const svg = new DOMParser().parseFromString(text, "image/svg+xml");
@@ -496,8 +496,7 @@ async function init() {
     }
   }
 
-  RESIZE_PARTICLE_COUNT(GET_PARAM("count"));
-  loadShape(shapePaths[0].path);
+  RESET();
 }
 
 // import { pickFiles, textFromFile } from "./utility.js";

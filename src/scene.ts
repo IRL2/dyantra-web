@@ -193,6 +193,7 @@ async function init() {
   function refreshAttractorsUI() {
     attractorsFolder.destroy();
     attractorsFolder = gui.addFolder("Attractors");
+    attractorsFolder.close();
 
     const attractors = GET_PARAM_ALL("attractor") as Attractor[];
 

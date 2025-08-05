@@ -17,6 +17,7 @@ import {
   PointsMaterial,
   Ray,
   Scene,
+  Sphere,
   SphereGeometry,
   TextureLoader,
   Vector3,
@@ -220,6 +221,7 @@ async function init() {
   function RESIZE_PARTICLE_COUNT(count: number) {
     pointsGeometry?.dispose();
     pointsGeometry = make_particle_geometry(count);
+    pointsGeometry.boundingSphere = new Sphere(undefined, Infinity);
     pointsObject.geometry = pointsGeometry;
 
     prev = make_particle_state(count);
@@ -418,6 +420,9 @@ async function init() {
   function enter_xr() {
     pointsMaterial.size = .01 * 1.2;
     objects.position.set(0, 1, -1);
+
+    audio.play();
+    step_sign = step_sign == 0 ? 1 : step_sign;
   }
 
   function exit_xr() {
@@ -475,7 +480,7 @@ async function init() {
     updateParticles(0.01 * step_sign);
     renderer.render(scene, camera);
 
-    attractorGroup.visible = IS_MENU_OPEN();
+    attractorGroup.visible = !attractorsFolder._closed && !gui._closed;
     if (IS_MENU_OPEN()) document.body.append(stats.dom);
     else stats.dom.remove();
     stats.update();

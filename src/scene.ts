@@ -338,7 +338,7 @@ async function init() {
       temp_v.copy(temp_p);
 
       const d = temp_p.length();
-      temp_p.multiplyScalar(Math.sin(u * Math.PI * 2) + d);
+      temp_p.multiplyScalar(Math.sin((u+d*.1) * Math.PI * 2)+d);
 
       temp_p.toArray(next.p, i * 3);
     }
@@ -347,6 +347,10 @@ async function init() {
 
     for (let i = 0; i < prev.count; ++i) {
       temp_c.set(color);
+
+      temp_p.fromArray(next.p, i * 3);
+      const d = temp_p.length();
+      temp_c.setHSL((d + u) % 1, .5, .5);
       temp_c.toArray(next.c, i * 3);
     }
   }

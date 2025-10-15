@@ -95,6 +95,7 @@ async function init() {
     velocity: GET_PARAM("velocity"),
     music: GET_PARAM("music"),
     color: GET_PARAM("color") ?? "#ffffff",
+    period: GET_PARAM("period"),
   }
 
   const generalFolder = gui.addFolder("General");
@@ -103,6 +104,7 @@ async function init() {
   const depthSlider = generalFolder.add(settings, "depth", 0, 10, .05).name("VR Distance");
   const musicToggle = generalFolder.add(settings, "music").name("Play Music");
   const velocityToggle = generalFolder.add(settings, "velocity").name("Color by Velocity");
+  const periodSlider = generalFolder.add(settings, "period", 1, 15, 0.1).name("Period");
   const colorWheel = generalFolder.addColor(settings, "color").name("Particle Color");
 
   countSlider.onFinishChange((count: number) => {
@@ -117,6 +119,7 @@ async function init() {
 
   depthSlider.onChange((depth: number) => SET_PARAM("depth", depth));
   velocityToggle.onChange((velocity: boolean) => SET_PARAM("velocity", velocity));
+  periodSlider.onChange((period: number) => SET_PARAM("period", period));
 
   musicToggle.onChange((music: boolean) => {
     SET_PARAM("music", music);
@@ -312,9 +315,9 @@ async function init() {
   refreshAttractorObjects();
   objects.add(attractorGroup);
 
-  function updateParticles(dt: number) {
+  function updateParticles(u: number) {
     // flip prev/next buffers
-    [prev, next] = [next, prev];
+    // [prev, next] = [next, prev];
 
     // update graphics buffers
     const positions = pointsGeometry.getAttribute("position");
@@ -326,69 +329,25 @@ async function init() {
     colors.array = next.c;
     colors.needsUpdate = true;
 
-    // factors
-    const m = 1;
-    const s1 = 0.5 * dt / m;
-    const s2 = 0.5 * dt * dt / m;
-
     // next.p = prev.p + prev.v * dt + prev.f * s;
     for (let i = 0; i < prev.count; ++i) {
       temp_p.fromArray(prev.p, i * 3);
       temp_v.fromArray(prev.v, i * 3);
       temp_f.fromArray(prev.f, i * 3);
 
-      temp_p.addScaledVector(temp_v, dt);
-      temp_p.addScaledVector(temp_f, s2);
+      temp_v.copy(temp_p);
+
+      const d = temp_p.length();
+      temp_p.multiplyScalar(Math.sin(u * Math.PI * 2) + d);
 
       temp_p.toArray(next.p, i * 3);
     }
 
-    // dp = prev.p - attractor.p
-    // exponent = (dp . dp) * attractor.inv_exp_denominator
-    // next.f = sum(dp * -attractor.coefficient * exp(exponent))
-    for (let i = 0; i < prev.count; ++i) {
-      temp_p.fromArray(prev.p, i * 3);
-      temp_f.set(0, 0, 0);
-
-      for (const attractor of attractors) {
-        temp.subVectors(temp_p, attractor.position);
-
-        const exp_numerator = temp.lengthSq();
-        const prefactor =
-          - attractor.coefficient
-          * Math.exp(exp_numerator * attractor.inv_exp_denominator);
-
-        temp.multiplyScalar(prefactor);
-
-        temp_f.add(temp);
-      }
-
-      temp_f.toArray(next.f, i * 3);
-    }
-
-    const velocityColored = GET_PARAM("velocity");
     const color = GET_PARAM("color");
 
-    // next.v = prev.v + (prev.f + next.f) * s;
     for (let i = 0; i < prev.count; ++i) {
-      temp_f.fromArray(prev.f, i * 3);
-      temp.fromArray(next.f, i * 3);
-      temp_f.add(temp)
-
-      temp_v.fromArray(prev.v, i * 3);
-      temp_v.addScaledVector(temp_f, s1);
-
-      temp_v.toArray(next.v, i * 3);
-
-      // color by velocity
-      if (velocityColored) {
-        const v = temp_v.lengthSq();
-        temp_c.setHSL(v, .75, .5);
-        temp_c.toArray(next.c, i * 3);
-      } else {
-        temp_c.set(color);
-        temp_c.toArray(next.c, i * 3);
-      }
+      temp_c.set(color);
+      temp_c.toArray(next.c, i * 3);
     }
   }
 
@@ -474,9 +433,12 @@ async function init() {
   let steps = 0;
   let step_sign = 1;
 
+  let time = 0;
+
   // control loop
   function animate() {
     const dt = Math.min(1 / 15, clock.getDelta());
+    const period = GET_PARAM("period");
 
     steps += step_sign;
     if (steps > step_limit) {
@@ -491,7 +453,11 @@ async function init() {
       update_xr(dt);
     }
 
-    updateParticles(0.01 * step_sign);
+    time += dt;
+    while (time > period)
+      time -= period;
+
+    updateParticles(time / period);
     renderer.render(scene, camera);
 
     attractorGroup.visible = !attractorsFolder._closed && !gui._closed;
@@ -574,6 +540,7 @@ function parseColor(text: string) {
 }
 
 DEF_PARAM("count", parseFloat, toString, Math.pow(2, 13));
+DEF_PARAM("period", parseFloat, toString, 1);
 DEF_PARAM("attractors", parseBool, toString, false);
 DEF_PARAM("velocity", parseBool, toString, true);
 DEF_PARAM("zoom", parseFloat, toString, 1);

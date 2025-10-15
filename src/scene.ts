@@ -287,7 +287,7 @@ async function init() {
   objects.add(pointsObject);
 
   // physics
-  const temp = new Vector3();
+  // const temp = new Vector3();
   const temp_p = new Vector3();
   const temp_f = new Vector3();
   const temp_v = new Vector3();

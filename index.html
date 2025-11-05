@@ -7,7 +7,45 @@
     <title>dyantra web</title>
   </head>
   <body>
+    <style>
+      datalist {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        writing-mode: vertical-lr;
+        width: 100%;
+      }
+
+      option {
+        padding: 0;
+      }
+
+      input[type="range"] {
+        margin: 0;
+        width: 100%;
+      }
+    </style>
     <canvas id="scene"></canvas>
     <script type="module" src="/src/scene.ts"></script>
+    <dialog open>
+      <h1>Input BPM</h1>
+      <form method="dialog">
+        <p>
+        <input type="range" min="3" max="11" id="bpm_input" list="bpm_values"/>
+        <datalist id="bpm_values">
+          <option value="3" label="3"></option>
+          <option value="4" label="4"></option>
+          <option value="5" label="5"></option>
+          <option value="6" label="6"></option>
+          <option value="7" label="7"></option>
+          <option value="8" label="8"></option>
+          <option value="9" label="9"></option>
+          <option value="10" label="10"></option>
+          <option value="11" label="11"></option>
+        </datalist>
+        </p>
+        <button>OK</button>
+      </form>
+    </dialog>
   </body>
 </html>

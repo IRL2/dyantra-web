@@ -121,6 +121,10 @@ async function init() {
   velocityToggle.onChange((velocity: boolean) => SET_PARAM("velocity", velocity));
   periodSlider.onChange((period: number) => SET_PARAM("period", period));
 
+  const bpminput = document.getElementById("bpm_input") as HTMLInputElement;
+  bpminput.addEventListener("input", () => periodSlider.setValue(60 / bpminput.valueAsNumber));
+
+
   musicToggle.onChange((music: boolean) => {
     SET_PARAM("music", music);
 
@@ -337,8 +341,13 @@ async function init() {
 
       temp_v.copy(temp_p);
 
+      const r = .2 + Math.sin(u * Math.PI * 2 * .5) * .1;
+
       const d = temp_p.length();
-      temp_p.multiplyScalar(Math.sin((u+d*.1) * Math.PI * 2)+d);
+      const dr = r - d;
+
+      temp_p.normalize();
+      temp_p.multiplyScalar(r*dr + Math.sin((u+dr*.1) * Math.PI * 2) * dr);
 
       temp_p.toArray(next.p, i * 3);
     }
@@ -671,6 +680,16 @@ export async function textFromFile(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.readAsText(file);
   });
+}
+
+/**
+ * Create an html element with the given attributes and children.
+ */
+export function html<K extends keyof HTMLElementTagNameMap>(tagName: K, attributes = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
+    const element = /** @type {HTMLElementTagNameMap[T]} */ (document.createElement(tagName)); 
+    Object.entries(attributes).forEach(([name, value]: [string, any]) => element.setAttribute(name, value));
+    children.forEach((child) => element.append(child));
+    return element;
 }
 
 init()

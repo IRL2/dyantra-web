@@ -18,6 +18,7 @@ export default defineConfig({
     https,
     port: 5500,
   },
+  base: "./",
   build: {
     rollupOptions: {
       output: {
